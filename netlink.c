@@ -4,23 +4,39 @@
 #include <linux/gfp.h>
 #include <net/sock.h>
 
+#include "serialize.h"
+
 #define MYMGRP 22
 
 struct sock *nl_sk = NULL;
 //static struct timer_list timer;
+
+static void log_msg(char *msg, int msg_size) {
+    size_t i;
+    char pt[msg_size * 6];
+    for (i = 0; i < msg_size; i++) {
+        printk(KERN_INFO "msg_size: %d, %hhX\n", msg_size, msg[i]);
+        snprintf(pt+i*6, 6, "0x%02hhX, ", msg[i]);
+    }
+
+    printk(KERN_INFO "msg: [%s]\n", pt);
+}
 
 static void nl_recv_msg(struct sk_buff *skb) {
     int pid; // pid of sending process
     int res;
     struct sk_buff *skb_out;
     struct nlmsghdr *nlh = nlmsg_hdr(skb);
-    char *msg = "Hello response from the kernel";
-    int msg_size = strlen(msg);
+    char msg[MAX_STRING_SIZE+6];
+    int msg_size;
 
     printk(KERN_INFO "Entering %s\n", __FUNCTION__);
 
     printk(KERN_INFO "Netlink received msg payload:%s\n", (char*)nlmsg_data(nlh));
     pid = nlh->nlmsg_pid;
+
+    msg_size = writeAckMsg(msg, 42, 1461, 255);
+    log_msg(msg, msg_size);
 
     skb_out = nlmsg_new(
         msg_size, // @payload: size of the message payload
@@ -41,7 +57,7 @@ static void nl_recv_msg(struct sk_buff *skb) {
     );
 
     NETLINK_CB(skb_out).dst_group = 0;
-    strncpy(nlmsg_data(nlh), msg, msg_size);
+    memcpy(nlmsg_data(nlh), msg, msg_size);
     res = nlmsg_unicast(nl_sk, skb_out, pid);
     if (res < 0) {
         printk(KERN_INFO "Error while sending back to user\n");
@@ -52,12 +68,15 @@ void nl_send_msg(unsigned long data) {
     struct sk_buff *skb_out;
     struct nlmsghdr *nlh;
     int res;
-    char *message = "Hello from kernel";
-    int msg_size = strlen(message) + 1;
+    char msg[MAX_STRING_SIZE+6];
+    int msg_size;
+
+    msg_size = writeCreateMsg(msg, 42, "reno");
+    log_msg(msg, msg_size);
 
     skb_out = nlmsg_new(
         NLMSG_ALIGN(msg_size), // @payload: size of the message payload
-        GFP_KERNEL                 // @flags: the type of memory to allocate.
+        GFP_KERNEL             // @flags: the type of memory to allocate.
     );
     if (!skb_out) {
         printk(KERN_ERR "Failed to allocate new skb\n");
@@ -74,13 +93,13 @@ void nl_send_msg(unsigned long data) {
     );
 
     //NETLINK_CB(skb_out).dst_group = 0;
-    strncpy(nlmsg_data(nlh), message, msg_size);
+    memcpy(nlmsg_data(nlh), msg, msg_size);
     printk(KERN_INFO "Sending proactive kernel message\n");
     res = nlmsg_multicast(
             nl_sk,     // @sk: netlink socket to spread messages to
             skb_out,   // @skb: netlink message as socket buffer
             0,         // @portid: own netlink portid to avoid sending to yourself
-            MYMGRP,        // @group: multicast group id
+            MYMGRP,    // @group: multicast group id
             GFP_KERNEL // @flags: allocation flags
     );
     if (res < 0) {
