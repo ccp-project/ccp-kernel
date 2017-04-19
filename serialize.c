@@ -18,10 +18,7 @@ int writeCwndMsg(char *buf, uint32_t sid, uint32_t cwnd) {
 }
 
 int readCwndMsg(char *buf, struct UInt32AndUInt32 *msg) {
-    void *b;
-
-    b = (void*) buf;
-    msg = (struct UInt32AndUInt32*) b;
+    memcpy(msg, buf, sizeof(struct UInt32AndUInt32));
 
     switch (msg->Type) {
         case CWND:
@@ -50,10 +47,7 @@ int writeAckMsg(char *buf, uint32_t sid, uint32_t ackNo, uint64_t rtt) {
 
 // kernel datapath should never have to read a ACK msg
 int readAckMsg(char *buf, struct UInt32AndUInt32AndUInt64 *msg) {
-    void *b;
-
-    b = (void*) buf;
-    msg = (struct UInt32AndUInt32AndUInt64*) b;
+    memcpy(msg, buf, sizeof(struct UInt32AndUInt32AndUInt64));
 
     switch (msg->Type) {
         case ACK:
@@ -89,10 +83,7 @@ int writeCreateMsg(char *buf, uint32_t sid, char* str) {
 
 // kernel datapath should never have to read a CREATE msg
 int readCreateMsg(char *buf, struct UInt32AndString *msg) {
-    void *b;
-    
-    b = (void*) buf;
-    msg = (struct UInt32AndString*) b;
+    memcpy(msg, buf, sizeof(struct UInt32AndString));
 
     switch (msg->Type) {
         case CREATE:
@@ -128,10 +119,7 @@ int writeDropMsg(char *buf, uint32_t sid, char* str) {
 
 // kernel datapath should never have to read a DROP msg
 int readDropMsg(char *buf, struct UInt32AndString *msg) {
-    void *b;
-
-    b = (void*) buf;
-    msg = (struct UInt32AndString*) b;
+    memcpy(msg, buf, sizeof(struct UInt32AndString));
 
     switch (msg->Type) {
         case DROP:

@@ -29,14 +29,18 @@ static void nl_recv_msg(struct sk_buff *skb) {
     struct nlmsghdr *nlh = nlmsg_hdr(skb);
     char msg[MAX_STRING_SIZE+6];
     int msg_size;
+    struct UInt32AndUInt32 cwndMsg;
 
     printk(KERN_INFO "Entering %s\n", __FUNCTION__);
 
-    printk(KERN_INFO "Netlink received msg payload:%s\n", (char*)nlmsg_data(nlh));
+    printk(KERN_INFO "Netlink raw rcvd:\n");
+    msg_size = readCwndMsg((char*)nlmsg_data(nlh), &cwndMsg);
+    log_msg((char*)nlmsg_data(nlh), msg_size);
+    printk(KERN_INFO "Netlink received msg payload: (%d, %d)\n", cwndMsg.Val1, cwndMsg.Val2);
     pid = nlh->nlmsg_pid;
 
     msg_size = writeAckMsg(msg, 42, 1461, 255);
-    log_msg(msg, msg_size);
+    //log_msg(msg, msg_size);
 
     skb_out = nlmsg_new(
         msg_size, // @payload: size of the message payload
@@ -72,7 +76,7 @@ void nl_send_msg(unsigned long data) {
     int msg_size;
 
     msg_size = writeCreateMsg(msg, 42, "reno");
-    log_msg(msg, msg_size);
+    //log_msg(msg, msg_size);
 
     skb_out = nlmsg_new(
         NLMSG_ALIGN(msg_size), // @payload: size of the message payload
