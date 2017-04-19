@@ -37,7 +37,10 @@ Vagrant.configure("2") do |config|
   # the path on the host to the actual folder. The second argument is
   # the path on the guest to mount the folder. And the optional third
   # argument is a set of non-required options.
-  config.vm.synced_folder "~/research/nebula", "/nebula"
+  config.vm.synced_folder "~/research/ccp", "/ccp"
+  config.vm.synced_folder "~/research/ccp-kernel", "/ccp-kernel"
+  config.vm.synced_folder "~/research/nimbus", "/nimbus"
+
   config.ssh.forward_agent = true
 
   # Provider-specific configuration so you can fine-tune various
@@ -65,8 +68,13 @@ Vagrant.configure("2") do |config|
   # Enable provisioning with a shell script. Additional provisioners such as
   # Puppet, Chef, Ansible, Salt, and Docker are also available. Please see the
   # documentation for more information about their specific syntax and use.
-  config.vm.provision "shell", inline: <<-SHELL
-    apt-get update
-    apt-get install -y build-essential make autoconf automake capnproto
-  SHELL
+  config.vm.provision "shell", inline: "apt-get update"
+  config.vm.provision "shell", inline: "apt-get install -y build-essential make autoconf automake capnproto"
+  config.vm.provision "shell", inline: "wget https://storage.googleapis.com/golang/go1.8.1.linux-amd64.tar.gz 2> /dev/null && tar -xzf go1.8.1.linux-amd64.tar.gz -C /usr/local && rm go1.8.1.linux-amd64.tar.gz"
+
+  config.vm.provision "shell", inline: "rm -rf go-work"
+  config.vm.provision "shell", inline: "mkdir -p go-work/src/github.mit.edu/hari && ln -s -f /ccp go-work/src/ccp && ln -s -f /nimbus go-work/src/github.mit.edu/hari/nimbus-cc"
+  config.vm.provision "shell", inline: "echo \"export GOPATH=/home/ubuntu/go-work\" >> .bashrc && echo \"export PATH=/usr/local/go/bin:$PATH\" >> .bashrc"
+  config.vm.provision "shell", inline: "export GOPATH=/home/ubuntu/go-work && /usr/local/go/bin/go get github.com/Sirupsen/logrus && /usr/local/go/bin/go get golang.org/x/sys/unix && /usr/local/go/bin/go get -u zombiezen.com/go/capnproto2/... && /usr/local/go/bin/go get github.com/akshayknarayan/netlink"
+  config.vm.provision "shell", inline: "sudo chown -R ubuntu:ubuntu go-work"
 end
