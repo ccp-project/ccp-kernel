@@ -47,16 +47,39 @@ struct __attribute__((packed, aligned(4))) UInt32AndString {
     char Str[MAX_STRING_SIZE];
 };
 
+// (uint32, uint32, string) serialized format
+// ----------------------------------------------------------
+// | Msg Type | Len (B)  | Uint32    | Uint32    |  String  |
+// | (1 B)    | (1 B)    | (32 bits) | (32 bits) |(variable)|
+// ----------------------------------------------------------
+struct __attribute__((packed, aligned(4))) UInt32AndUInt32AndString {
+    uint8_t Type;
+    uint8_t Len;
+    uint32_t Val;
+    uint32_t Val2;
+    char Str[MAX_STRING_SIZE];
+};
+
 int writeCwndMsg(char *buf, uint32_t sid, uint32_t cwnd);
 int readCwndMsg(char *buf, struct UInt32AndUInt32 *msg);
 
-int writeCreateMsg(char *buf, uint32_t sid, char* str);
-int readCreateMsg(char *buf, struct UInt32AndString *msg);
+int writeCreateMsg(
+    char *buf, 
+    uint32_t sid, 
+    uint32_t startSeq, 
+    char* str
+);
+int readCreateMsg(char *buf, struct UInt32AndUInt32AndString *msg);
 
 int writeDropMsg(char *buf, uint32_t sid, char* str);
 int readDropMsg(char *buf, struct UInt32AndString *msg);
 
-int writeAckMsg(char *buf, uint32_t sid, uint32_t ackNo, uint64_t rtt);
+int writeAckMsg(
+    char *buf, 
+    uint32_t sid, 
+    uint32_t ackNo, 
+    uint64_t rtt
+);
 int readAckMsg(char *buf, struct UInt32AndUInt32AndUInt64 *msg);
 
 #endif

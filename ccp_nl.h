@@ -16,7 +16,11 @@ void ccp_connection_free(uint16_t sid);
 struct sock *ccp_connection_lookup(uint16_t sid);
 
 void nl_recv_cwnd(struct sk_buff *skb);
-void nl_send_conn_create(struct sock *nl_sk, uint16_t ccp_index);
+void nl_send_conn_create(
+    struct sock *nl_sk, 
+    uint16_t ccp_index, 
+    uint32_t startSeq
+);
 void nl_send_ack_notif(
     struct sock *nl_sk, 
     uint16_t ccp_index, 

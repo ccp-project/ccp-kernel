@@ -68,6 +68,7 @@ void tcp_ccp_cong_avoid(struct sock *sk, u32 ack, u32 acked) {
 EXPORT_SYMBOL_GPL(tcp_ccp_cong_avoid);
 
 void tcp_ccp_init(struct sock *sk) {
+    struct tcp_sock *tp;
     struct sock *nl_sk;
     struct ccp *cpl;
     struct netlink_kernel_cfg cfg = {
@@ -88,7 +89,12 @@ void tcp_ccp_init(struct sock *sk) {
     cpl->ccp_index = ccp_connection_start(sk);
     cpl->nl_sk = nl_sk;
     cpl->beg_snd_una = 1;
-    nl_send_conn_create(nl_sk, cpl->ccp_index);
+
+    tp = tcp_sk(sk);
+    // send to CCP:
+    // index of pointer back to this sock for IPC callback
+    // first ack to expect
+    nl_send_conn_create(nl_sk, cpl->ccp_index, tp->snd_una);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_init);
 

@@ -103,6 +103,7 @@ void nl_recv_cwnd(struct sk_buff *skb) {
     struct UInt32AndUInt32 cwndMsg;
     struct sock *sk;
     struct tcp_sock *tp;
+    uint32_t cwnd;
 
     printk(KERN_INFO "Entering %s\n", __FUNCTION__);
 
@@ -113,9 +114,11 @@ void nl_recv_cwnd(struct sk_buff *skb) {
     }
 
     tp = tcp_sk(sk);
-    
-    printk(KERN_INFO "(%d, %d) cwnd %d -> %d\n", cwndMsg.Val1, cwndMsg.Val2, tp->snd_cwnd, cwndMsg.Val2);
-    tp->snd_cwnd = cwndMsg.Val2;
+
+    // translate cwnd value back into packets
+    cwnd = tp->snd_cwnd / tp->advmss;
+    printk(KERN_INFO "(%d, %d) cwnd %d -> %d\n", cwndMsg.Val1, cwndMsg.Val2, tp->snd_cwnd, cwnd);
+    tp->snd_cwnd = cwnd;
 }
 
 // send IPC message to userspace ccp
@@ -161,7 +164,11 @@ static void nl_sendmsg(
 }
 
 // send create msg
-void nl_send_conn_create(struct sock *nl_sk, uint16_t ccp_index) {
+void nl_send_conn_create(
+    struct sock *nl_sk, 
+    uint16_t ccp_index, 
+    uint32_t startSeq
+) {
     char msg[MAX_STRING_SIZE+6];
     int msg_size;
     
@@ -169,9 +176,9 @@ void nl_send_conn_create(struct sock *nl_sk, uint16_t ccp_index) {
         return;
     }
 
-    printk(KERN_INFO "sending create: id=%d\n", ccp_index);
+    printk(KERN_INFO "sending create: id=%d, startSeq=%d\n", ccp_index, startSeq);
 
-    msg_size = writeCreateMsg(msg, ccp_index, "reno");
+    msg_size = writeCreateMsg(msg, ccp_index, startSeq, "reno");
     nl_sendmsg(nl_sk, msg, msg_size);
 }
 

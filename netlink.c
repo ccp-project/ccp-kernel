@@ -75,7 +75,7 @@ void nl_send_msg(unsigned long data) {
     char msg[MAX_STRING_SIZE+6];
     int msg_size;
 
-    msg_size = writeCreateMsg(msg, 42, "reno");
+    msg_size = writeCreateMsg(msg, 42, 0, "reno");
     //log_msg(msg, msg_size);
 
     skb_out = nlmsg_new(

@@ -59,9 +59,14 @@ int readAckMsg(char *buf, struct UInt32AndUInt32AndUInt64 *msg) {
     return 18;
 }
 
-int writeCreateMsg(char *buf, uint32_t sid, char* str) {
+int writeCreateMsg(
+    char *buf, 
+    uint32_t sid, 
+    uint32_t startSeq, 
+    char* str
+) {
     int len;
-    struct UInt32AndString crMsg;
+    struct UInt32AndUInt32AndString crMsg;
     void *b;
     
     len = strlen(str) + 1;
@@ -70,20 +75,21 @@ int writeCreateMsg(char *buf, uint32_t sid, char* str) {
     }
 
     crMsg.Type = CREATE;
-    crMsg.Len = len + 6;
-    crMsg.Val = sid,
+    crMsg.Len  = len + 10;
+    crMsg.Val  = sid;
+    crMsg.Val2 = startSeq;
 
     memset(crMsg.Str, 0, MAX_STRING_SIZE);
     strncpy(crMsg.Str, str, len);
 
     b = (void*) &crMsg;
-    memcpy(buf, (char*) b, len+6);
+    memcpy(buf, (char*) b, len+10);
     return crMsg.Len;
 }
 
 // kernel datapath should never have to read a CREATE msg
-int readCreateMsg(char *buf, struct UInt32AndString *msg) {
-    memcpy(msg, buf, sizeof(struct UInt32AndString));
+int readCreateMsg(char *buf, struct UInt32AndUInt32AndString *msg) {
+    memcpy(msg, buf, sizeof(struct UInt32AndUInt32AndString));
 
     switch (msg->Type) {
         case CREATE:
