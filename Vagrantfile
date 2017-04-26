@@ -77,4 +77,5 @@ Vagrant.configure("2") do |config|
   config.vm.provision "shell", inline: "echo \"export GOPATH=/home/ubuntu/go-work\" >> .bashrc && echo \"export PATH=/usr/local/go/bin:$PATH\" >> .bashrc"
   config.vm.provision "shell", inline: "export GOPATH=/home/ubuntu/go-work && /usr/local/go/bin/go get github.com/Sirupsen/logrus && /usr/local/go/bin/go get golang.org/x/sys/unix && /usr/local/go/bin/go get -u zombiezen.com/go/capnproto2/... && /usr/local/go/bin/go get github.com/akshayknarayan/netlink"
   config.vm.provision "shell", inline: "sudo chown -R ubuntu:ubuntu go-work"
+  config.vm.provision "shell", inline: "sudo sysctl -w net.ipv4.ip_forward=1"
 end
