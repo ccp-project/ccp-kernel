@@ -12,7 +12,7 @@ Vagrant.configure("2") do |config|
 
   # Every Vagrant development environment requires a box. You can search for
   # boxes at https://atlas.hashicorp.com/search.
-  config.vm.box = "ubuntu/xenial64"
+  config.vm.box = "wholebits/ubuntu17.04-64"
 
   # Disable automatic box update checking. If you disable this, then
   # boxes will only be checked for updates when the user runs
@@ -39,6 +39,8 @@ Vagrant.configure("2") do |config|
   # argument is a set of non-required options.
   config.vm.synced_folder "~/research/ccp", "/ccp"
   config.vm.synced_folder "~/research/ccp-kernel", "/ccp-kernel"
+  config.vm.synced_folder "~/research/netlink-kernel", "/netlink-kernel"
+  config.vm.synced_folder "~/research/hello-kernel", "/hello-kernel"
   config.vm.synced_folder "~/research/nimbus", "/nimbus"
 
   config.ssh.forward_agent = true
@@ -47,13 +49,13 @@ Vagrant.configure("2") do |config|
   # backing providers for Vagrant. These expose provider-specific options.
   # Example for VirtualBox:
   #
-  # config.vm.provider "virtualbox" do |vb|
-  #   # Display the VirtualBox GUI when booting the machine
-  #   vb.gui = true
+  config.vm.provider "virtualbox" do |vb|
+     # Display the VirtualBox GUI when booting the machine
+     vb.gui = true
   #
   #   # Customize the amount of memory on the VM:
   #   vb.memory = "1024"
-  # end
+  end
   #
   # View the documentation for the provider you are using for more
   # information on available options.
@@ -69,13 +71,13 @@ Vagrant.configure("2") do |config|
   # Puppet, Chef, Ansible, Salt, and Docker are also available. Please see the
   # documentation for more information about their specific syntax and use.
   config.vm.provision "shell", inline: "apt-get update"
-  config.vm.provision "shell", inline: "apt-get install -y build-essential make autoconf automake capnproto"
+  config.vm.provision "shell", inline: "apt-get install -y build-essential make autoconf automake capnproto git"
   config.vm.provision "shell", inline: "wget https://storage.googleapis.com/golang/go1.8.1.linux-amd64.tar.gz 2> /dev/null && tar -xzf go1.8.1.linux-amd64.tar.gz -C /usr/local && rm go1.8.1.linux-amd64.tar.gz"
 
   config.vm.provision "shell", inline: "rm -rf go-work"
   config.vm.provision "shell", inline: "mkdir -p go-work/src/github.mit.edu/hari && ln -s -f /ccp go-work/src/ccp && ln -s -f /nimbus go-work/src/github.mit.edu/hari/nimbus-cc"
   config.vm.provision "shell", inline: "echo \"export GOPATH=/home/ubuntu/go-work\" >> .bashrc && echo \"export PATH=/usr/local/go/bin:$PATH\" >> .bashrc"
   config.vm.provision "shell", inline: "export GOPATH=/home/ubuntu/go-work && /usr/local/go/bin/go get github.com/Sirupsen/logrus && /usr/local/go/bin/go get golang.org/x/sys/unix && /usr/local/go/bin/go get -u zombiezen.com/go/capnproto2/... && /usr/local/go/bin/go get github.com/akshayknarayan/netlink"
-  config.vm.provision "shell", inline: "sudo chown -R ubuntu:ubuntu go-work"
+  config.vm.provision "shell", inline: "sudo chown -R vagrant:vagrant go-work"
   config.vm.provision "shell", inline: "sudo sysctl -w net.ipv4.ip_forward=1"
 end
