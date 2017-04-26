@@ -54,12 +54,10 @@ void tcp_ccp_cong_avoid(struct sock *sk, u32 ack, u32 acked) {
     //tcp_cong_avoid_ai(tp, tp->snd_cwnd, acked);
 
     cpl = inet_csk_ca(sk);
-
     // if an RTT has passed
     if (after(ack, cpl->beg_snd_una)) {
         cpl->beg_snd_una = tp->snd_nxt;
-        printk(KERN_INFO "sending ack notif: cumAck=%u, srtt=%u, snd_una=%u\n", ack, tp->srtt_us, cpl->beg_snd_una);
-
+        //printk(KERN_INFO "sending ack notif: cumAck=%u, srtt=%u, snd_una=%u, snd_cwnd=%u\n", ack, tp->srtt_us, cpl->beg_snd_una, tp->snd_cwnd);
         nl_send_ack_notif(cpl->nl_sk, cpl->ccp_index, ack, tp->srtt_us);
     } else {
         //printk(KERN_INFO "ack: cumAck=%u, snd_una=%u, cwnd=%u\n", ack, cpl->beg_snd_una, tp->snd_cwnd);
@@ -84,13 +82,13 @@ void tcp_ccp_init(struct sock *sk) {
     }
 
     // store initialized netlink sock ptr in connection state
+    tp = tcp_sk(sk);
     cpl = inet_csk_ca(sk);
     // if returned 0, don't communicate with ccp
     cpl->ccp_index = ccp_connection_start(sk);
     cpl->nl_sk = nl_sk;
-    cpl->beg_snd_una = 1;
+    cpl->beg_snd_una = tp->snd_una;
 
-    tp = tcp_sk(sk);
     // send to CCP:
     // index of pointer back to this sock for IPC callback
     // first ack to expect

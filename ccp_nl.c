@@ -116,8 +116,8 @@ void nl_recv_cwnd(struct sk_buff *skb) {
     tp = tcp_sk(sk);
 
     // translate cwnd value back into packets
-    cwnd = tp->snd_cwnd / tp->advmss;
-    printk(KERN_INFO "(%d, %d) cwnd %d -> %d\n", cwndMsg.Val1, cwndMsg.Val2, tp->snd_cwnd, cwnd);
+    cwnd = cwndMsg.Val2 / tp->mss_cache;
+    printk(KERN_INFO "(%d, %d) cwnd %d -> %d (mss %d)\n", cwndMsg.Val1, cwndMsg.Val2, tp->snd_cwnd, cwnd, tp->mss_cache);
     tp->snd_cwnd = cwnd;
 }
 
@@ -176,7 +176,7 @@ void nl_send_conn_create(
         return;
     }
 
-    printk(KERN_INFO "sending create: id=%d, startSeq=%d\n", ccp_index, startSeq);
+    printk(KERN_INFO "sending create: id=%u, startSeq=%u\n", ccp_index, startSeq);
 
     msg_size = writeCreateMsg(msg, ccp_index, startSeq, "reno");
     nl_sendmsg(nl_sk, msg, msg_size);
@@ -196,8 +196,7 @@ void nl_send_ack_notif(
         return;
     }
         
-    printk(KERN_INFO "sending ack notif: id=%d, cumAck=%d, srtt=%d\n", ccp_index, cumAck, srtt);
-
+    //printk(KERN_INFO "sending ack notif: id=%u, cumAck=%u, srtt=%u\n", ccp_index, cumAck, srtt);
     msg_size = writeAckMsg(msg, ccp_index, cumAck, srtt);
     nl_sendmsg(nl_sk, msg, msg_size);
 }
