@@ -150,12 +150,17 @@ static void nl_sendmsg(
     );
 
     memcpy(nlmsg_data(nlh), msg, msg_size);
+    // https://www.spinics.net/lists/netdev/msg435978.html
+    // "It is process context but with a spinlock (bh_lock_sock) held, so
+    // you still can't sleep. IOW, you have to pass a proper gfp flag to
+    // reflect this."
+    // Use an allocation without __GFP_DIRECT_RECLAIM
     res = nlmsg_multicast(
         nl_sk,               // @sk: netlink socket to spread messages to
         skb_out,             // @skb: netlink message as socket buffer
         0,                   // @portid: own netlink portid to avoid sending to yourself
         CCP_MULTICAST_GROUP, // @group: multicast group id
-        GFP_KERNEL           // @flags: allocation flags
+        GFP_NOWAIT           // @flags: allocation flags
     );
     if (res < 0) {
         /* Wait 1 second. */
