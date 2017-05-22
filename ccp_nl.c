@@ -122,7 +122,7 @@ void nl_recv_cwnd(struct sk_buff *skb) {
 }
 
 // send IPC message to userspace ccp
-static void nl_sendmsg(
+static int nl_sendmsg(
     struct sock *nl_sk, 
     char *msg, 
     int msg_size
@@ -132,12 +132,12 @@ static void nl_sendmsg(
     struct nlmsghdr *nlh;
 
     skb_out = nlmsg_new(
-        msg_size, // @payload: size of the message payload
-        0         // @flags: the type of memory to allocate.
+        msg_size,  // @payload: size of the message payload
+        GFP_NOWAIT // @flags: the type of memory to allocate.
     );
     if (!skb_out) {
         printk(KERN_ERR "Failed to allocate new skb\n");
-        return;
+        return -1;
     }
 
     nlh = nlmsg_put(
@@ -163,9 +163,10 @@ static void nl_sendmsg(
         GFP_NOWAIT           // @flags: allocation flags
     );
     if (res < 0) {
-        /* Wait 1 second. */
-        //mod_timer(&timer, jiffies + msecs_to_jiffies(1000));
+        return res;
     }
+
+    return 0;
 }
 
 // send create msg
@@ -175,6 +176,7 @@ void nl_send_conn_create(
     uint32_t startSeq
 ) {
     char msg[MAX_STRING_SIZE+6];
+    int ok;
     int msg_size;
     
     if (ccp_index < 1) {
@@ -184,7 +186,9 @@ void nl_send_conn_create(
     printk(KERN_INFO "sending create: id=%u, startSeq=%u\n", ccp_index, startSeq);
 
     msg_size = writeCreateMsg(msg, ccp_index, startSeq, "reno");
-    nl_sendmsg(nl_sk, msg, msg_size);
+    do {
+        ok = nl_sendmsg(nl_sk, msg, msg_size);
+    } while (ok < 0);
 }
 
 // send ack msg
@@ -203,5 +207,7 @@ void nl_send_ack_notif(
         
     //printk(KERN_INFO "sending ack notif: id=%u, cumAck=%u, srtt=%u\n", ccp_index, cumAck, srtt);
     msg_size = writeAckMsg(msg, ccp_index, cumAck, srtt);
+    // it's ok if this send fails
+    // will auto-retry on the next ack
     nl_sendmsg(nl_sk, msg, msg_size);
 }
