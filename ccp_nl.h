@@ -28,4 +28,16 @@ void nl_send_ack_notif(
     u32 srtt
 );
 
+enum drop_type {
+    DROP_TIMEOUT,
+    DROP_DUPACK,
+    DROP_ECN
+};
+
+void nl_send_drop_notif(
+    struct sock *nl_sl,
+    uint16_t ccp_index,
+    enum drop_type dtype
+);
+
 #endif

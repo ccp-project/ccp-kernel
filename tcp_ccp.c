@@ -65,6 +65,39 @@ void tcp_ccp_cong_avoid(struct sock *sk, u32 ack, u32 acked) {
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_cong_avoid);
 
+/*
+ * Detect drops.
+ *
+ * TCP_CA_Loss -> a timeout happened
+ * TCP_CA_Recovery -> an isolated loss (3x dupack) happened.
+ * TCP_CA_CWR -> got an ECN
+ */
+void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
+    struct ccp *cpl;
+    enum drop_type dtype;
+    switch (new_state) {
+        case TCP_CA_Recovery:
+            printk(KERN_INFO "entered TCP_CA_Recovery (dupack drop)\n");
+            dtype = DROP_DUPACK;
+            break;
+        case TCP_CA_Loss:
+            printk(KERN_INFO "entered TCP_CA_Loss (timeout drop)\n");
+            dtype = DROP_TIMEOUT;
+            break;
+        case TCP_CA_CWR:
+            printk(KERN_INFO "entered TCP_CA_CWR (ecn drop)\n");
+            dtype = DROP_ECN;
+            break;
+        default:
+            printk(KERN_INFO "TCP normal state\n");
+            return;
+    }
+
+    cpl = inet_csk_ca(sk);
+    nl_send_drop_notif(cpl->nl_sk, cpl->ccp_index, dtype);
+}
+EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
+
 void tcp_ccp_init(struct sock *sk) {
     struct tcp_sock *tp;
     struct sock *nl_sk;
@@ -113,6 +146,7 @@ struct tcp_congestion_ops tcp_ccp_congestion_ops = {
     .ssthresh = tcp_ccp_ssthresh,
     .cong_avoid = tcp_ccp_cong_avoid,
     .undo_cwnd = tcp_ccp_undo_cwnd,
+    .set_state = tcp_ccp_set_state,
 };
 
 static int __init tcp_ccp_register(void) {

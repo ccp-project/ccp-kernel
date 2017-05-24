@@ -57,7 +57,7 @@ uint16_t ccp_connection_start(struct sock *sk) {
 // return NULL on error
 struct sock *ccp_connection_lookup(uint16_t sid) {
     struct ccp_connection *conn;
-    printk(KERN_INFO "Entering %s\n", __FUNCTION__);
+    //printk(KERN_INFO "Entering %s\n", __FUNCTION__);
     // bounds check
     if (sid == 0 || sid > MAX_NUM_CONNECTIONS) {
         printk(KERN_INFO "index out of bounds: %d", sid);
@@ -105,7 +105,7 @@ void nl_recv_cwnd(struct sk_buff *skb) {
     struct tcp_sock *tp;
     uint32_t cwnd;
 
-    printk(KERN_INFO "Entering %s\n", __FUNCTION__);
+    //printk(KERN_INFO "Entering %s\n", __FUNCTION__);
 
     msg_size = readCwndMsg((char*)nlmsg_data(nlh), &cwndMsg);
     sk = ccp_connection_lookup(cwndMsg.Val1);
@@ -210,4 +210,34 @@ void nl_send_ack_notif(
     // it's ok if this send fails
     // will auto-retry on the next ack
     nl_sendmsg(nl_sk, msg, msg_size);
+}
+
+void nl_send_drop_notif(
+    struct sock *nl_sk,
+    uint16_t ccp_index,
+    enum drop_type dtype
+) {
+    char msg[MAX_STRING_SIZE+6];
+    int ok;
+    int msg_size;
+    
+    if (ccp_index < 1) {
+        return;
+    }
+
+    printk(KERN_INFO "sending drop: id=%u, ev=%d\n", ccp_index, dtype);
+
+    switch (dtype) {
+        case DROP_TIMEOUT:
+            msg_size = writeDropMsg(msg, ccp_index, "timeout");
+        case DROP_DUPACK:
+            msg_size = writeDropMsg(msg, ccp_index, "dupack");
+        case DROP_ECN:
+            msg_size = writeDropMsg(msg, ccp_index, "ecn");
+        default:
+            return;
+    }
+    do {
+        ok = nl_sendmsg(nl_sk, msg, msg_size);
+    } while (ok < 0);
 }
