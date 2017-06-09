@@ -65,6 +65,16 @@ void tcp_ccp_cong_avoid(struct sock *sk, u32 ack, u32 acked) {
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_cong_avoid);
 
+void tcp_ccp_pkts_acked(struct sock *sk, const struct ack_sample *sample) {
+    struct ccp *cpl;
+    s32 sampleRTT;
+
+    cpl = inet_csk_ca(sk);
+    sampleRTT = sample->rtt_us;
+    printk(KERN_INFO "pkt sample rtt %d us\n", sampleRTT);
+}
+EXPORT_SYMBOL_GPL(tcp_ccp_pkts_acked);
+
 /*
  * Detect drops.
  *
@@ -147,6 +157,7 @@ struct tcp_congestion_ops tcp_ccp_congestion_ops = {
     .cong_avoid = tcp_ccp_cong_avoid,
     .undo_cwnd = tcp_ccp_undo_cwnd,
     .set_state = tcp_ccp_set_state,
+    .pkts_acked = tcp_ccp_pkts_acked,
 };
 
 static int __init tcp_ccp_register(void) {
