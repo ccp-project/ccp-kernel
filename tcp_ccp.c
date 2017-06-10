@@ -57,10 +57,9 @@ void tcp_ccp_cong_avoid(struct sock *sk, u32 ack, u32 acked) {
     // if an RTT has passed
     if (after(ack, cpl->beg_snd_una)) {
         cpl->beg_snd_una = tp->snd_nxt;
-        //printk(KERN_INFO "sending ack notif: cumAck=%u, srtt=%u, snd_una=%u, snd_cwnd=%u\n", ack, tp->srtt_us, cpl->beg_snd_una, tp->snd_cwnd);
         nl_send_ack_notif(cpl->nl_sk, cpl->ccp_index, ack, tp->srtt_us);
-    } else {
-        //printk(KERN_INFO "ack: cumAck=%u, snd_una=%u, cwnd=%u\n", ack, cpl->beg_snd_una, tp->snd_cwnd);
+    } else if (tp->snd_cwnd > 2170) {
+        printk(KERN_INFO "ack: cumAck=%u, beg_snd_una=%u, cwnd=%u\n", ack, cpl->beg_snd_una, tp->snd_cwnd);
     }
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_cong_avoid);
@@ -71,7 +70,7 @@ void tcp_ccp_pkts_acked(struct sock *sk, const struct ack_sample *sample) {
 
     cpl = inet_csk_ca(sk);
     sampleRTT = sample->rtt_us;
-    printk(KERN_INFO "pkt sample rtt %d us\n", sampleRTT);
+    //printk(KERN_INFO "pkt sample rtt %d us\n", sampleRTT);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_pkts_acked);
 

@@ -188,6 +188,9 @@ void nl_send_conn_create(
     msg_size = writeCreateMsg(msg, ccp_index, startSeq, "reno");
     do {
         ok = nl_sendmsg(nl_sk, msg, msg_size);
+        if (ok < 0) {
+            printk(KERN_INFO "create notif failed: id=%u, err=%d\n", ccp_index, ok);
+        }
     } while (ok < 0);
 }
 
@@ -199,6 +202,7 @@ void nl_send_ack_notif(
     u32 srtt
 ) {
     char msg[MAX_STRING_SIZE+6];
+    int ok;
     int msg_size;
     
     if (ccp_index < 1) {
@@ -209,7 +213,10 @@ void nl_send_ack_notif(
     msg_size = writeAckMsg(msg, ccp_index, cumAck, srtt);
     // it's ok if this send fails
     // will auto-retry on the next ack
-    nl_sendmsg(nl_sk, msg, msg_size);
+    ok = nl_sendmsg(nl_sk, msg, msg_size);
+    if (ok < 0) {
+        printk(KERN_INFO "ack notif failed: id=%u, cumAck=%u, srtt=%u, err=%d\n", ccp_index, cumAck, srtt, ok);
+    }
 }
 
 void nl_send_drop_notif(
@@ -243,5 +250,8 @@ void nl_send_drop_notif(
     }
     do {
         ok = nl_sendmsg(nl_sk, msg, msg_size);
+        if (ok < 0) {
+            printk(KERN_INFO "drop notif failed: id=%u, ev=%d, err=%d\n", ccp_index, dtype, ok);
+        }
     } while (ok < 0);
 }
