@@ -205,7 +205,7 @@ void nl_send_ack_notif(
         return;
     }
         
-    //printk(KERN_INFO "sending ack notif: id=%u, cumAck=%u, srtt=%u\n", ccp_index, cumAck, srtt);
+    printk(KERN_INFO "sending ack notif: id=%u, cumAck=%u, srtt=%u\n", ccp_index, cumAck, srtt);
     msg_size = writeAckMsg(msg, ccp_index, cumAck, srtt);
     // it's ok if this send fails
     // will auto-retry on the next ack
@@ -230,11 +230,15 @@ void nl_send_drop_notif(
     switch (dtype) {
         case DROP_TIMEOUT:
             msg_size = writeDropMsg(msg, ccp_index, "timeout");
+            break;
         case DROP_DUPACK:
             msg_size = writeDropMsg(msg, ccp_index, "dupack");
+            break;
         case DROP_ECN:
             msg_size = writeDropMsg(msg, ccp_index, "ecn");
+            break;
         default:
+            printk(KERN_INFO "sending drop: unknown event? id=%u, ev=%d != {%d, %d, %d}\n", ccp_index, dtype, DROP_TIMEOUT, DROP_DUPACK, DROP_ECN);
             return;
     }
     do {
