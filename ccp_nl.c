@@ -170,7 +170,7 @@ static int nl_sendmsg(
 }
 
 // send create msg
-void nl_send_conn_create(
+int nl_send_conn_create(
     struct sock *nl_sk, 
     uint16_t ccp_index, 
     uint32_t startSeq
@@ -180,18 +180,18 @@ void nl_send_conn_create(
     int msg_size;
     
     if (ccp_index < 1) {
-        return;
+        return -1;
     }
 
     printk(KERN_INFO "sending create: id=%u, startSeq=%u\n", ccp_index, startSeq);
 
     msg_size = writeCreateMsg(msg, ccp_index, startSeq, "reno");
-    do {
-        ok = nl_sendmsg(nl_sk, msg, msg_size);
-        if (ok < 0) {
-            printk(KERN_INFO "create notif failed: id=%u, err=%d\n", ccp_index, ok);
-        }
-    } while (ok < 0);
+    ok = nl_sendmsg(nl_sk, msg, msg_size);
+    if (ok < 0) {
+        printk(KERN_INFO "create notif failed: id=%u, err=%d\n", ccp_index, ok);
+    }
+
+    return ok;
 }
 
 // send ack msg
@@ -219,7 +219,7 @@ void nl_send_ack_notif(
     }
 }
 
-void nl_send_drop_notif(
+int nl_send_drop_notif(
     struct sock *nl_sk,
     uint16_t ccp_index,
     enum drop_type dtype
@@ -229,7 +229,7 @@ void nl_send_drop_notif(
     int msg_size;
     
     if (ccp_index < 1) {
-        return;
+        return -1;
     }
 
     printk(KERN_INFO "sending drop: id=%u, ev=%d\n", ccp_index, dtype);
@@ -246,12 +246,13 @@ void nl_send_drop_notif(
             break;
         default:
             printk(KERN_INFO "sending drop: unknown event? id=%u, ev=%d != {%d, %d, %d}\n", ccp_index, dtype, DROP_TIMEOUT, DROP_DUPACK, DROP_ECN);
-            return;
+            return -2;
     }
-    do {
-        ok = nl_sendmsg(nl_sk, msg, msg_size);
-        if (ok < 0) {
-            printk(KERN_INFO "drop notif failed: id=%u, ev=%d, err=%d\n", ccp_index, dtype, ok);
-        }
-    } while (ok < 0);
+        
+    ok = nl_sendmsg(nl_sk, msg, msg_size);
+    if (ok < 0) {
+        printk(KERN_INFO "drop notif failed: id=%u, ev=%d, err=%d\n", ccp_index, dtype, ok);
+    }
+
+    return ok;
 }

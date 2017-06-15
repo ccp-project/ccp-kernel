@@ -4,6 +4,7 @@
 #include "ccp_nl.h"
 
 struct ccp {
+    bool created;
     uint16_t ccp_index;
     struct sock *nl_sk;
     u32 beg_snd_una; /* left edge during last RTT */
@@ -37,6 +38,7 @@ EXPORT_SYMBOL_GPL(tcp_ccp_undo_cwnd);
  */
 void tcp_ccp_cong_avoid(struct sock *sk, u32 ack, u32 acked) {
     struct ccp *cpl;
+    int ok;
     struct tcp_sock *tp = tcp_sk(sk);
 
     if (!tcp_is_cwnd_limited(sk)) {
@@ -57,10 +59,21 @@ void tcp_ccp_cong_avoid(struct sock *sk, u32 ack, u32 acked) {
     // if an RTT has passed
     if (after(ack, cpl->beg_snd_una)) {
         cpl->beg_snd_una = tp->snd_nxt;
+        if (!cpl->created) {
+            // send to CCP:
+            // index of pointer back to this sock for IPC callback
+            // first ack to expect
+            ok = nl_send_conn_create(cpl->nl_sk, cpl->ccp_index, cpl->beg_snd_una);
+            cpl->created = (ok >= 0);
+            if (ok < 0) {
+                return;
+            }
+        }
+
         nl_send_ack_notif(cpl->nl_sk, cpl->ccp_index, ack, tp->srtt_us);
-    } else if (tp->snd_cwnd > 2170) {
-        printk(KERN_INFO "ack: cumAck=%u, beg_snd_una=%u, cwnd=%u\n", ack, cpl->beg_snd_una, tp->snd_cwnd);
-    }
+    }// else if (tp->snd_cwnd > 2170) {
+    //    printk(KERN_INFO "ack: cumAck=%u, beg_snd_una=%u, cwnd=%u\n", ack, cpl->beg_snd_una, tp->snd_cwnd);
+    //}
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_cong_avoid);
 
@@ -103,6 +116,10 @@ void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
     }
 
     cpl = inet_csk_ca(sk);
+    if (!cpl->created) {
+        return;
+    }
+
     nl_send_drop_notif(cpl->nl_sk, cpl->ccp_index, dtype);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
@@ -111,6 +128,7 @@ void tcp_ccp_init(struct sock *sk) {
     struct tcp_sock *tp;
     struct sock *nl_sk;
     struct ccp *cpl;
+    int ok;
     struct netlink_kernel_cfg cfg = {
         .input = nl_recv_cwnd,
     };
@@ -134,7 +152,8 @@ void tcp_ccp_init(struct sock *sk) {
     // send to CCP:
     // index of pointer back to this sock for IPC callback
     // first ack to expect
-    nl_send_conn_create(nl_sk, cpl->ccp_index, tp->snd_una);
+    ok = nl_send_conn_create(nl_sk, cpl->ccp_index, tp->snd_una);
+    cpl->created = (ok >= 0);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_init);
 

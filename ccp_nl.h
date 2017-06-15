@@ -16,7 +16,7 @@ void ccp_connection_free(uint16_t sid);
 struct sock *ccp_connection_lookup(uint16_t sid);
 
 void nl_recv_cwnd(struct sk_buff *skb);
-void nl_send_conn_create(
+int nl_send_conn_create(
     struct sock *nl_sk, 
     uint16_t ccp_index, 
     uint32_t startSeq
@@ -34,7 +34,7 @@ enum drop_type {
     DROP_ECN
 };
 
-void nl_send_drop_notif(
+int nl_send_drop_notif(
     struct sock *nl_sl,
     uint16_t ccp_index,
     enum drop_type dtype
