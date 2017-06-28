@@ -1,14 +1,84 @@
 #include <linux/module.h>
 #include <net/tcp.h>
 
+#include "tcp_ccp.h"
 #include "ccp_nl.h"
+#include "stateMachine.h"
 
-struct ccp {
-    bool created;
-    uint16_t ccp_index;
-    struct sock *nl_sk;
-    u32 beg_snd_una; /* left edge during last RTT */
-};
+#define CCP_FRAC_DENOM 10
+#define CCP_EWMA_RECENCY 6
+
+void ccp_set_pacing_rate(struct sock *sk) {
+    struct tcp_sock *tp = tcp_sk(sk);
+    struct ccp *ca = inet_csk_ca(sk);
+    u64 segs_in_flight; /* desired cwnd as rate * rtt */
+    sk->sk_pacing_rate = ca->rate;
+    if (likely(ca->mmt.rtt > 0)) {
+        segs_in_flight = (u64)ca->rate * ca->mmt.rtt;
+        do_div(segs_in_flight, MTU);
+        do_div(segs_in_flight, S_TO_US);
+        pr_info("ccp: Setting new rate %d Mbit/s (%d bps) (cwnd %llu)\n", ca->rate / 125000, ca->rate, segs_in_flight + 3);
+        /* Add few more segments to segs_to_flight to prevent rate underflow due to 
+         * temporary RTT fluctuations. */
+        tp->snd_cwnd = segs_in_flight + 3;
+    }
+}
+
+static int rate_sample_valid(const struct rate_sample *rs)
+{
+  int ret = 0;
+  if ((rs->delivered > 0) && (rs->snd_int_us > 0) && (rs->rcv_int_us > 0) && (rs->interval_us > 0))
+    return 0;
+  if (rs->delivered <= 0)
+    ret |= 1;
+  if (rs->snd_int_us <= 0)
+    ret |= 2;
+  if (rs->rcv_int_us <= 0)
+    ret |= 4;
+  if (rs->interval_us <= 0)
+    ret |= 8;
+  return ret;
+}
+
+static u64 ewma(u64 old, u64 new) {
+    return ((new * CCP_EWMA_RECENCY) +
+        (old * (CCP_FRAC_DENOM-CCP_EWMA_RECENCY))) / CCP_FRAC_DENOM;
+}
+
+void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
+    // aggregate measurement
+    // state = fold(state, rs)
+    // TODO custom fold functions (for now, default only all fields)
+    struct tcp_sock *tp = tcp_sk(sk);
+    struct ccp *ca = inet_csk_ca(sk);
+    struct ccp_measurement curr_mmt = {
+        .ack = tp->snd_una,
+        .rtt = rs->rtt_us,
+        .rin = 0, /* send bandwidth in bytes per second */
+        .rout = 0, /* recv bandwidth in bytes per second */
+    };
+
+    int measured_valid_rate = rate_sample_valid(rs);
+    if (measured_valid_rate == 0) {
+        curr_mmt.rin = curr_mmt.rout = (u64)rs->delivered * MTU * S_TO_US;
+        do_div(curr_mmt.rin, rs->snd_int_us);
+        do_div(curr_mmt.rout, rs->rcv_int_us);
+    } else {
+        return;
+    }
+    
+    //pr_info("ccp: rate_calculation: delivered %llu, MTU %d, S_TO_US %d, rcv_bw_bps %llu, rcv_int_us %lu, snd_bw_bps %llu, snd_int_us %lu rs_rtt %ld\n",
+    //        (u64) rs->delivered, MTU, S_TO_US, ca->mmt.rout, rs->rcv_int_us, ca->mmt.rin, rs->snd_int_us, rs->rtt_us);
+
+    ca->mmt.ack = curr_mmt.ack; // max()
+    ca->mmt.rtt = ewma(ca->mmt.rtt, curr_mmt.rtt);
+    ca->mmt.rin = ewma(ca->mmt.rin, curr_mmt.rin);
+    ca->mmt.rout = ewma(ca->mmt.rout, curr_mmt.rout);
+     
+    // rate control state machine
+    sendStateMachine(sk);
+}
+EXPORT_SYMBOL_GPL(tcp_ccp_cong_control);
 
 /* Slow start threshold is half the congestion window (min 2) */
 u32 tcp_ccp_ssthresh(struct sock *sk) {
@@ -24,58 +94,6 @@ u32 tcp_ccp_undo_cwnd(struct sock *sk) {
     return max(tp->snd_cwnd, tp->snd_ssthresh << 1);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_undo_cwnd);
-
-/*
- * TCP Reno congestion control
- * This is special case used for fallback as well.
- */
-/* This is Jacobson's slow start and congestion avoidance.
- * SIGCOMM '88, p. 328.
- */
-/*
- * ack = the cumulative ack
- * acked = the delta between this ack and the prev cumAck
- */
-void tcp_ccp_cong_avoid(struct sock *sk, u32 ack, u32 acked) {
-    struct ccp *cpl;
-    int ok;
-    struct tcp_sock *tp = tcp_sk(sk);
-
-    if (!tcp_is_cwnd_limited(sk)) {
-        //printk(KERN_INFO "not cwnd limited: %d\n", tp->snd_cwnd);
-        return;
-    }
-
-    /* In "safe" area, increase. */
-    //if (tcp_in_slow_start(tp)) {
-    //    acked = tcp_slow_start(tp, acked);
-    //    if (!acked)
-    //        return;
-    //}
-    /* In dangerous area, increase slowly. */
-    //tcp_cong_avoid_ai(tp, tp->snd_cwnd, acked);
-
-    cpl = inet_csk_ca(sk);
-    // if an RTT has passed
-    if (after(ack, cpl->beg_snd_una)) {
-        cpl->beg_snd_una = tp->snd_nxt;
-        if (!cpl->created) {
-            // send to CCP:
-            // index of pointer back to this sock for IPC callback
-            // first ack to expect
-            ok = nl_send_conn_create(cpl->nl_sk, cpl->ccp_index, cpl->beg_snd_una);
-            cpl->created = (ok >= 0);
-            if (ok < 0) {
-                return;
-            }
-        }
-
-        nl_send_ack_notif(cpl->nl_sk, cpl->ccp_index, ack, tp->srtt_us);
-    }// else if (tp->snd_cwnd > 2170) {
-    //    printk(KERN_INFO "ack: cumAck=%u, beg_snd_una=%u, cwnd=%u\n", ack, cpl->beg_snd_una, tp->snd_cwnd);
-    //}
-}
-EXPORT_SYMBOL_GPL(tcp_ccp_cong_avoid);
 
 void tcp_ccp_pkts_acked(struct sock *sk, const struct ack_sample *sample) {
     struct ccp *cpl;
@@ -128,9 +146,8 @@ void tcp_ccp_init(struct sock *sk) {
     struct tcp_sock *tp;
     struct sock *nl_sk;
     struct ccp *cpl;
-    int ok;
     struct netlink_kernel_cfg cfg = {
-        .input = nl_recv_cwnd,
+        .input = nl_recv,
     };
 
     printk(KERN_INFO "init NL\n");
@@ -147,13 +164,14 @@ void tcp_ccp_init(struct sock *sk) {
     // if returned 0, don't communicate with ccp
     cpl->ccp_index = ccp_connection_start(sk);
     cpl->nl_sk = nl_sk;
-    cpl->beg_snd_una = tp->snd_una;
+    cpl->next_event_time = tcp_time_stamp;
+    cpl->currPatternEvent = 0;
+    cpl->numPatternEvents = 0;
 
     // send to CCP:
     // index of pointer back to this sock for IPC callback
     // first ack to expect
-    ok = nl_send_conn_create(nl_sk, cpl->ccp_index, tp->snd_una);
-    cpl->created = (ok >= 0);
+    check_nlsk_created(cpl, tp->snd_una);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_init);
 
@@ -172,7 +190,8 @@ struct tcp_congestion_ops tcp_ccp_congestion_ops = {
     .init = tcp_ccp_init,
     .release = tcp_ccp_release,
     .ssthresh = tcp_ccp_ssthresh,
-    .cong_avoid = tcp_ccp_cong_avoid,
+    //.cong_avoid = tcp_ccp_cong_avoid,
+    .cong_control = tcp_ccp_cong_control,
     .undo_cwnd = tcp_ccp_undo_cwnd,
     .set_state = tcp_ccp_set_state,
     .pkts_acked = tcp_ccp_pkts_acked,

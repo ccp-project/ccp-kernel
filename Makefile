@@ -1,8 +1,8 @@
 TARGET = ccp
-ccp-objs := tcp_ccp.o ccp_nl.o serialize.o 
+ccp-objs := tcp_ccp.o ccp_nl.o stateMachine.o serialize.o 
 
 TESTTARGET = ccptest
-ccptest-objs := netlink.o serialize.o
+ccptest-objs := netlink_test.o serialize.o
 
 obj-m := $(TARGET).o $(TESTTARGET).o
 

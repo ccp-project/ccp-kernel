@@ -2,137 +2,197 @@
 
 #include "serialize.h"
 
-// kernel datapath should never have to write a CWND msg
-int writeCwndMsg(char *buf, uint32_t sid, uint32_t cwnd) {
-    struct UInt32AndUInt32 cwndMsg;
-    void *b;
-    
-    cwndMsg.Type = CWND;
-    cwndMsg.Len = 10;
-    cwndMsg.Val1 = sid;
-    cwndMsg.Val2 = cwnd;
-
-    b = (void*) &cwndMsg;
-    memcpy(buf, (char*) b, cwndMsg.Len);
-    return 10;
-}
-
-int readCwndMsg(char *buf, struct UInt32AndUInt32 *msg) {
-    memcpy(msg, buf, sizeof(struct UInt32AndUInt32));
-
-    switch (msg->Type) {
-        case CWND:
-            break;
-        default:
-            msg = NULL;
-            return -1;
+int readHeader(struct CcpMsgHeader *hdr, char *buf) {
+    memcpy(hdr, buf, sizeof(struct CcpMsgHeader));
+    switch (hdr->Type) {
+    case CREATE:
+    case MEASURE:
+    case DROP:
+    case PATTERN:
+        return sizeof(struct CcpMsgHeader);
+    default:
+        return -1;
     }
-    return 10;
 }
 
-int writeAckMsg(char *buf, uint32_t sid, uint32_t ackNo, uint64_t rtt) {
-    struct UInt32AndUInt32AndUInt64 ackMsg;
-    void *b;
-    
-    ackMsg.Type = ACK;
-    ackMsg.Len = 18;
-    ackMsg.Val1 = sid;
-    ackMsg.Val2 = ackNo;
-    ackMsg.Val3 = rtt;
-
-    b = (void*) &ackMsg;
-    memcpy(buf, (char*) b, ackMsg.Len);
-    return 18;
-}
-
-// kernel datapath should never have to read a ACK msg
-int readAckMsg(char *buf, struct UInt32AndUInt32AndUInt64 *msg) {
-    memcpy(msg, buf, sizeof(struct UInt32AndUInt32AndUInt64));
-
-    switch (msg->Type) {
-        case ACK:
-            break;
-        default:
-            msg = NULL;
-            return -1;
+int serializeHeader(char *buf, int bufsize, struct CcpMsgHeader *hdr) {
+    switch (hdr->Type) {
+    case CREATE:
+    case MEASURE:
+    case DROP:
+    case PATTERN:
+        break;
+    default:
+        return -1;
     }
-    return 18;
+
+    if (bufsize < sizeof(struct CcpMsgHeader)) {
+        return -2;
+    }
+
+    memcpy(buf, hdr, sizeof(struct CcpMsgHeader));
+    return sizeof(struct CcpMsgHeader);
+}
+
+/* buf is pointer to message buffer after the header has been written
+ * bufsize is the remaining size in the buffer
+ */
+int serializeMeasureMsg(char *buf, int bufsize, struct MeasureMsg *msg) {
+    if (bufsize < sizeof(struct MeasureMsg)) {
+        return -2;
+    }
+
+    memcpy(buf, msg, bufsize);
+    return sizeof(struct MeasureMsg);
 }
 
 int writeCreateMsg(
     char *buf, 
+    int bufsize,
     uint32_t sid, 
     uint32_t startSeq, 
+    char* congAlg
+) {
+    int ok;
+    int congAlgLen = strlen(congAlg) + 1;
+    struct CcpMsgHeader hdr = {
+        .Type = CREATE, 
+        .Len = 10 + congAlgLen, 
+        .SocketId = sid,
+    };
+    
+    ok = serializeHeader(buf, bufsize, &hdr);
+    if (ok < 0) {
+        return ok;
+    }
+
+    // advance write head by header size
+    buf += ok;
+
+    memcpy(buf, &startSeq, sizeof(uint32_t));
+
+    // advance write head by uint32_t size
+    buf += sizeof(uint32_t);
+    ok += sizeof(uint32_t);
+
+    memset(buf, 0, congAlgLen);
+    strncpy(buf, congAlg, congAlgLen);
+    ok += congAlgLen;
+
+    return ok;
+}
+
+int writeMeasureMsg(
+    char *buf, 
+    int bufsize,
+    uint32_t sid, 
+    uint32_t ackNo, 
+    uint32_t rtt,
+    uint64_t rin,
+    uint64_t rout
+) {
+    int ok;
+    size_t ret;
+    struct CcpMsgHeader hdr = {
+        .Type = MEASURE, 
+        .Len = 30, 
+        .SocketId = sid,
+    };
+
+    struct MeasureMsg msg = {
+        .ackNo = ackNo,
+        .rtt = rtt,
+        .rin = rin,
+        .rout = rout,
+    };
+
+    ok = serializeHeader(buf, bufsize, &hdr);
+    if (ok < 0) {
+        return ok;
+    }
+
+    buf += ok;
+    ret = ok;
+    ok = serializeMeasureMsg(buf, bufsize - ok, &msg);
+    if (ok < 0) {
+        return -2;
+    }
+
+    return ret + ok;
+}
+
+int writeDropMsg(
+    char *buf, 
+    int bufsize,
+    uint32_t sid, 
     char* str
 ) {
-    int len;
-    struct UInt32AndUInt32AndString crMsg;
-    void *b;
-    
-    len = strlen(str) + 1;
-    if (len > MAX_STRING_SIZE) {
+    int ok;
+    int dropMsgLen = strlen(str) + 1;
+    struct CcpMsgHeader hdr = {
+        .Type = DROP, 
+        .Len = 6 + dropMsgLen, 
+        .SocketId = sid,
+    };
+
+    if (bufsize < sizeof(struct CcpMsgHeader) + dropMsgLen) {
         return -1;
     }
 
-    crMsg.Type = CREATE;
-    crMsg.Len  = len + 10;
-    crMsg.Val  = sid;
-    crMsg.Val2 = startSeq;
-
-    memset(crMsg.Str, 0, MAX_STRING_SIZE);
-    strncpy(crMsg.Str, str, len);
-
-    b = (void*) &crMsg;
-    memcpy(buf, (char*) b, len+10);
-    return crMsg.Len;
-}
-
-// kernel datapath should never have to read a CREATE msg
-int readCreateMsg(char *buf, struct UInt32AndUInt32AndString *msg) {
-    memcpy(msg, buf, sizeof(struct UInt32AndUInt32AndString));
-
-    switch (msg->Type) {
-        case CREATE:
-            break;
-        default:
-            msg = NULL;
-            return -1;
+    ok = serializeHeader(buf, bufsize, &hdr);
+    if (ok < 0) {
+        return ok;
     }
-    return msg->Len;
+
+    // advance write head by header size
+    buf += ok;
+
+    memset(buf, 0, dropMsgLen);
+    strncpy(buf, str, dropMsgLen);
+
+    return ok + dropMsgLen;
 }
 
-int writeDropMsg(char *buf, uint32_t sid, char* str) {
-    int len;
-    struct UInt32AndString drMsg;
-    void *b;
-    
-    len = strlen(str) + 1;
-    if (len > MAX_STRING_SIZE) {
+int readMsg(
+    struct CcpMsgHeader *hdr, 
+    struct PatternMsg *msg,
+    char *buf
+) {
+    int ok;
+    ok = readHeader(hdr, buf);
+    if (ok < 0) {
+        return ok;
+    }
+
+    buf += ok;
+    if (hdr->Type != PATTERN) {
         return -1;
     }
 
-    drMsg.Type = DROP;
-    drMsg.Len = len + 6;
-    drMsg.Val = sid,
-
-    memset(drMsg.Str, 0, MAX_STRING_SIZE);
-    strncpy(drMsg.Str, str, len);
-
-    b = (void*) &drMsg;
-    memcpy(buf, (char*) b, len+6);
-    return drMsg.Len;
+    memcpy(msg, buf, hdr->Len - 6);
+    return hdr->Len;
 }
 
-// kernel datapath should never have to read a DROP msg
-int readDropMsg(char *buf, struct UInt32AndString *msg) {
-    memcpy(msg, buf, sizeof(struct UInt32AndString));
-
-    switch (msg->Type) {
-        case DROP:
-            break;
-        default:
-            msg = NULL;
+int readPattern(
+    struct PatternEvent *seq,
+    char *pattern,
+    int numEvents
+) {
+    int i;
+    for (i = 0; i < numEvents; i++) {
+        memcpy(&(seq[i]), pattern, sizeof(struct PatternEvent));
+        if (seq[i].size == 2 && seq[i].type == REPORT) {
+            pattern += 2;
+            seq[i].val = 0;
+            continue;
+        } else if (seq[i].size != 6) {
+            // only report events are 2 bytes
+            // all other events are 6 bytes
             return -1;
+        }
+
+        pattern += seq[i].size;
     }
-    return msg->Len;
+
+    return 0;
 }

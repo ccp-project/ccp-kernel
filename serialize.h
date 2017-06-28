@@ -2,84 +2,121 @@
 #define CCP_SERIALIZE_H
 
 #include <linux/kernel.h>
+#include "tcp_ccp.h"
 
-#define CREATE 0
-#define ACK 1
-#define DROP 2
-#define CWND 3
+#define CREATE  0
+#define MEASURE 1
+#define DROP    2
+#define PATTERN 3
 
-// (uint32, uint32) serialized format
-// -----------------------------------------------
-// | Msg Type | Len (B)  | Uint32    | Uint32    |
-// | (1 B)    | (1 B)    | (32 bits) | (32 bits) |
-// -----------------------------------------------
-struct __attribute__((packed, aligned(4))) UInt32AndUInt32 {
+#define BIGGEST_MSG_SIZE 256
+#define MAX_STRING_SIZE 250
+
+/* (type, len, socket_id) header
+ * -----------------------------------
+ * | Msg Type | Len (B)  | Uint32    |
+ * | (1 B)    | (1 B)    | (32 bits) |
+ * -----------------------------------
+ * total: 6 Bytes
+ */
+struct __attribute__((packed, aligned(2))) CcpMsgHeader {
     uint8_t Type;
     uint8_t Len;
-    uint32_t Val1;
-    uint32_t Val2;
+    uint32_t SocketId;
 };
 
-// (uint32, uint32, int64) serialized format
-// -----------------------------------------------------------
-// | Msg Type | Len (B)  | Uint32    | Uint32    | Uint64    |
-// | (1 B)    | (1 B)    | (32 bits) | (32 bits) | (64 bits) |
-// -----------------------------------------------------------
-struct __attribute__((packed, aligned(4))) UInt32AndUInt32AndUInt64 {
-    uint8_t Type;
-    uint8_t Len;
-    uint32_t Val1;
-    uint32_t Val2;
-    uint64_t Val3;
+/* 
+ * CREATE:  1 u32, 0 u64, str
+ */
+struct __attribute__((packed, aligned(4))) CreateMsg {
+    uint32_t startSeq;
+    char congAlg[MAX_STRING_SIZE];
 };
 
-#define MAX_STRING_SIZE 26
-
-// (uint32, string) serialized format
-// -----------------------------------------------
-// | Msg Type | Len (B)  | Uint32    | String    |
-// | (1 B)    | (1 B)    | (32 bits) | (variable)|
-// -----------------------------------------------
-struct __attribute__((packed, aligned(4))) UInt32AndString {
-    uint8_t Type;
-    uint8_t Len;
-    uint32_t Val;
-    char Str[MAX_STRING_SIZE];
+/* 
+ * MEASURE: 2 u32, 2 u64, no str
+ */
+struct __attribute__((packed, aligned(4))) MeasureMsg {
+    uint32_t ackNo;
+    uint32_t rtt;
+    uint64_t rin;
+    uint64_t rout;
 };
 
-// (uint32, uint32, string) serialized format
-// ----------------------------------------------------------
-// | Msg Type | Len (B)  | Uint32    | Uint32    |  String  |
-// | (1 B)    | (1 B)    | (32 bits) | (32 bits) |(variable)|
-// ----------------------------------------------------------
-struct __attribute__((packed, aligned(4))) UInt32AndUInt32AndString {
-    uint8_t Type;
-    uint8_t Len;
-    uint32_t Val;
-    uint32_t Val2;
-    char Str[MAX_STRING_SIZE];
+/* 
+ * DROP:    0 u32, 0 u64, str
+ */
+struct __attribute__((packed, aligned(4))) DropMsg {
+    char type[MAX_STRING_SIZE];
 };
 
-int writeCwndMsg(char *buf, uint32_t sid, uint32_t cwnd);
-int readCwndMsg(char *buf, struct UInt32AndUInt32 *msg);
+/* 
+ * PATTERN:  1 u32, 0 u64, str
+ */
+struct __attribute__((packed, aligned(4))) PatternMsg {
+    uint32_t numStates;
+    char pattern[MAX_STRING_SIZE];
+};
 
+int readHeader(struct CcpMsgHeader *hdr, char *buf);
+
+/* return: number of bytes written to buf
+ */
+int serializeHeader(char *buf, int bufsize, struct CcpMsgHeader *hdr);
+
+/* return: number of bytes written to buf
+ */
+int serializeMeasureMsg(char *buf, int bufsize, struct MeasureMsg *msg);
+
+/* return: number of bytes written to buf
+ */
 int writeCreateMsg(
     char *buf, 
+    int bufsize,
     uint32_t sid, 
     uint32_t startSeq, 
     char* str
 );
-int readCreateMsg(char *buf, struct UInt32AndUInt32AndString *msg);
 
-int writeDropMsg(char *buf, uint32_t sid, char* str);
-int readDropMsg(char *buf, struct UInt32AndString *msg);
-
-int writeAckMsg(
+/* return: number of bytes written to buf
+ */
+int writeMeasureMsg(
     char *buf, 
+    int bufsize,
     uint32_t sid, 
     uint32_t ackNo, 
-    uint64_t rtt
+    uint32_t rtt,
+    uint64_t rin,
+    uint64_t rout
 );
-int readAckMsg(char *buf, struct UInt32AndUInt32AndUInt64 *msg);
+
+/* return: number of bytes written to buf
+ */
+int writeDropMsg(
+    char *buf, 
+    int bufsize,
+    uint32_t sid, 
+    char* str
+);
+
+/* return: size of msg
+ */
+int readMsg(
+    struct CcpMsgHeader *hdr, 
+    struct PatternMsg *msg,
+    char *buf 
+);
+
+/* Events serialized in the string in PatternMsg
+ * if no val in event, set to 0
+ *
+ * seq: array of PatternEvents
+ * return: 0 if ok, -1 otherwise
+ */
+int readPattern(
+    struct PatternEvent *seq,
+    char *pattern,
+    int numEvents
+);
 
 #endif

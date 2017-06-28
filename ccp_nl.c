@@ -3,6 +3,7 @@
 
 #include "ccp_nl.h"
 #include "serialize.h"
+#include "stateMachine.h"
 
 #define CCP_MULTICAST_GROUP 22
 #define MAX_NUM_CONNECTIONS 100
@@ -95,30 +96,52 @@ void ccp_connection_free(uint16_t sid) {
     return;
 }
 
+void check_nlsk_created(
+    struct ccp *cpl,
+    u32 una
+) {
+    int ok;
+    if (unlikely(!cpl->created)) {
+        // send to CCP:
+        // index of pointer back to this sock for IPC callback
+        // first ack to expect
+        ok = nl_send_conn_create(cpl->nl_sk, cpl->ccp_index, una);
+        cpl->created = (ok >= 0);
+    }
+}
+
 // callback from userspace ccp
-// lookup ccp socket id, modulate cwnd
-void nl_recv_cwnd(struct sk_buff *skb) {
-    struct nlmsghdr *nlh = nlmsg_hdr(skb);
-    int msg_size;
-    struct UInt32AndUInt32 cwndMsg;
+// all messages will be PatternMsg
+// lookup ccp socket id, install new pattern
+void nl_recv(struct sk_buff *skb) {
+    int ok;
     struct sock *sk;
-    struct tcp_sock *tp;
-    uint32_t cwnd;
+    struct CcpMsgHeader hdr;
+    struct PatternMsg msg;
+    struct PatternEvent *sequence;
+    struct nlmsghdr *nlh = nlmsg_hdr(skb);
 
-    //printk(KERN_INFO "Entering %s\n", __FUNCTION__);
+    ok = readMsg(&hdr, &msg, (char*)nlmsg_data(nlh));  
+    if (ok < 0) {
+        return;
+    }
 
-    msg_size = readCwndMsg((char*)nlmsg_data(nlh), &cwndMsg);
-    sk = ccp_connection_lookup(cwndMsg.Val1);
+    sk = ccp_connection_lookup(hdr.SocketId);
     if (sk == NULL) {
         return;
     }
 
-    tp = tcp_sk(sk);
+    sequence = kmalloc(msg.numStates * sizeof(struct PatternEvent), GFP_KERNEL);
+    if (!sequence) {
+        return;
+    }
 
-    // translate cwnd value back into packets
-    cwnd = cwndMsg.Val2 / tp->mss_cache;
-    printk(KERN_INFO "(%d, %d) cwnd %d -> %d (mss %d)\n", cwndMsg.Val1, cwndMsg.Val2, tp->snd_cwnd, cwnd, tp->mss_cache);
-    tp->snd_cwnd = cwnd;
+    ok = readPattern(sequence, msg.pattern, msg.numStates);
+    if (ok < 0) {
+        return;
+    }
+
+    installPattern(sk, msg.numStates, sequence);
 }
 
 // send IPC message to userspace ccp
@@ -175,7 +198,7 @@ int nl_send_conn_create(
     uint16_t ccp_index, 
     uint32_t startSeq
 ) {
-    char msg[MAX_STRING_SIZE+6];
+    char msg[BIGGEST_MSG_SIZE];
     int ok;
     int msg_size;
     
@@ -185,7 +208,7 @@ int nl_send_conn_create(
 
     printk(KERN_INFO "sending create: id=%u, startSeq=%u\n", ccp_index, startSeq);
 
-    msg_size = writeCreateMsg(msg, ccp_index, startSeq, "reno");
+    msg_size = writeCreateMsg(msg, BIGGEST_MSG_SIZE, ccp_index, startSeq, "reno");
     ok = nl_sendmsg(nl_sk, msg, msg_size);
     if (ok < 0) {
         printk(KERN_INFO "create notif failed: id=%u, err=%d\n", ccp_index, ok);
@@ -194,14 +217,14 @@ int nl_send_conn_create(
     return ok;
 }
 
-// send ack msg
-void nl_send_ack_notif(
+// send datapath measurements
+// acks, rtt, rin, rout
+void nl_send_measurement(
     struct sock *nl_sk, 
     uint16_t ccp_index, 
-    u32 cumAck, 
-    u32 srtt
+    struct ccp_measurement mmt
 ) {
-    char msg[MAX_STRING_SIZE+6];
+    char msg[BIGGEST_MSG_SIZE];
     int ok;
     int msg_size;
     
@@ -209,13 +232,13 @@ void nl_send_ack_notif(
         return;
     }
         
-    printk(KERN_INFO "sending ack notif: id=%u, cumAck=%u, srtt=%u\n", ccp_index, cumAck, srtt);
-    msg_size = writeAckMsg(msg, ccp_index, cumAck, srtt);
+    printk(KERN_INFO "sending measurement notif: id=%u, cumAck=%u, rtt=%u, rin=%llu, rout=%llu\n", ccp_index, mmt.ack, mmt.rtt, mmt.rin, mmt.rout);
+    msg_size = writeMeasureMsg(msg, BIGGEST_MSG_SIZE, ccp_index, mmt.ack, mmt.rtt, mmt.rin, mmt.rout);
     // it's ok if this send fails
     // will auto-retry on the next ack
     ok = nl_sendmsg(nl_sk, msg, msg_size);
     if (ok < 0) {
-        printk(KERN_INFO "ack notif failed: id=%u, cumAck=%u, srtt=%u, err=%d\n", ccp_index, cumAck, srtt, ok);
+        printk(KERN_INFO "mmt notif failed: id=%u, cumAck=%u, rtt=%u, rin=%llu, rout=%llu\n", ccp_index, mmt.ack, mmt.rtt, mmt.rin, mmt.rout);
     }
 }
 
@@ -224,7 +247,7 @@ int nl_send_drop_notif(
     uint16_t ccp_index,
     enum drop_type dtype
 ) {
-    char msg[MAX_STRING_SIZE+6];
+    char msg[BIGGEST_MSG_SIZE];
     int ok;
     int msg_size;
     
@@ -236,13 +259,13 @@ int nl_send_drop_notif(
 
     switch (dtype) {
         case DROP_TIMEOUT:
-            msg_size = writeDropMsg(msg, ccp_index, "timeout");
+            msg_size = writeDropMsg(msg, BIGGEST_MSG_SIZE, ccp_index, "timeout");
             break;
         case DROP_DUPACK:
-            msg_size = writeDropMsg(msg, ccp_index, "dupack");
+            msg_size = writeDropMsg(msg, BIGGEST_MSG_SIZE, ccp_index, "dupack");
             break;
         case DROP_ECN:
-            msg_size = writeDropMsg(msg, ccp_index, "ecn");
+            msg_size = writeDropMsg(msg, BIGGEST_MSG_SIZE, ccp_index, "ecn");
             break;
         default:
             printk(KERN_INFO "sending drop: unknown event? id=%u, ev=%d != {%d, %d, %d}\n", ccp_index, dtype, DROP_TIMEOUT, DROP_DUPACK, DROP_ECN);
