@@ -59,7 +59,7 @@ static void doWaitAbs(
     struct ccp *cpl = inet_csk_ca(sk);
     do_div(wait_us, 100);
     pr_info("waiting %u us\n", wait_us);
-    cpl->next_event_time = tcp_time_stamp + msecs_to_jiffies(wait_us);
+    cpl->next_event_time = tcp_time_stamp + usecs_to_jiffies(wait_us);
 }
 
 static void doWaitRel(
@@ -71,7 +71,7 @@ static void doWaitRel(
     u64 wait_us = rtt_factor * rtt_us;
     do_div(wait_us, 100);
     pr_info("waiting %llu us (%u/100 rtts) (rtt = %llu us)\n", wait_us, rtt_factor, rtt_us);
-    cpl->next_event_time = tcp_time_stamp + msecs_to_jiffies(wait_us);
+    cpl->next_event_time = tcp_time_stamp + usecs_to_jiffies(wait_us);
 }
 
 void sendStateMachine(struct sock *sk) {
