@@ -4,7 +4,7 @@
 #include <linux/net.h>
 
 #define MTU 1500
-#define S_TO_US 100000
+#define S_TO_US 1000000
 
 struct ccp_measurement {
     u32 ack;

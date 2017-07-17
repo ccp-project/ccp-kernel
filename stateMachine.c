@@ -22,7 +22,7 @@ static void doSetRateAbs(
 
     // rate is * 100
     do_div(rate, 100);
-    printk(KERN_INFO "rate -> %d\n", rate);
+    printk(KERN_INFO "rate (Bytes/s) -> %u\n", rate);
     ca->rate = rate;
     ccp_set_pacing_rate(sk);
 }

@@ -17,7 +17,7 @@ void ccp_set_pacing_rate(struct sock *sk) {
         segs_in_flight = (u64)ca->rate * ca->mmt.rtt;
         do_div(segs_in_flight, MTU);
         do_div(segs_in_flight, S_TO_US);
-        pr_info("ccp: Setting new rate %d Mbit/s (%d bps) (cwnd %llu)\n", ca->rate / 125000, ca->rate, segs_in_flight + 3);
+        pr_info("ccp: Setting new rate %d Mbit/s (%d Bps) (cwnd %llu)\n", ca->rate / 125000, ca->rate, segs_in_flight + 3);
         /* Add few more segments to segs_to_flight to prevent rate underflow due to 
          * temporary RTT fluctuations. */
         tp->snd_cwnd = segs_in_flight + 3;
