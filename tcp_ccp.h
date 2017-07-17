@@ -13,6 +13,13 @@ struct ccp_measurement {
     u64 rout;
 };
 
+enum drop_type {
+    NO_DROP,
+    DROP_TIMEOUT,
+    DROP_DUPACK,
+    DROP_ECN
+};
+
 #define SETRATEABS 0 
 #define SETCWNDABS 1 
 #define SETRATEREL 2 
@@ -33,6 +40,7 @@ struct ccp {
     uint8_t currPatternEvent;
     uint8_t numPatternEvents;
     u32 next_event_time;
+    enum drop_type last_drop_state;
 
     // measurement
     struct ccp_measurement mmt;

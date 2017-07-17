@@ -4,7 +4,7 @@
 #include "tcp_ccp.h"
 #include "ccp_nl.h"
 
-void doSetCwndAbs(
+static void doSetCwndAbs(
     struct tcp_sock *tp, 
     uint32_t cwnd
 ) {
@@ -14,7 +14,7 @@ void doSetCwndAbs(
     tp->snd_cwnd = cwnd;
 }
 
-void doSetRateAbs(
+static void doSetRateAbs(
     struct sock *sk,
     uint32_t rate
 ) {
@@ -27,7 +27,7 @@ void doSetRateAbs(
     ccp_set_pacing_rate(sk);
 }
 
-void doSetRateRel(
+static void doSetRateRel(
     struct sock *sk,
     uint32_t factor
 ) {
@@ -41,33 +41,36 @@ void doSetRateRel(
     ccp_set_pacing_rate(sk);
 }
 
-void doReport(
+static void doReport(
     struct sock *sk
 ) {
     struct ccp *cpl = inet_csk_ca(sk);
     struct tcp_sock *tp = tcp_sk(sk);
     struct ccp_measurement mmt = cpl->mmt;
+    pr_info("sending report\n");
     check_nlsk_created(cpl, tp->snd_una);
     nl_send_measurement(cpl->nl_sk, cpl->ccp_index, mmt);
 }
 
-void doWaitAbs(
+static void doWaitAbs(
     struct sock *sk,
     uint32_t wait_us
 ) {
     struct ccp *cpl = inet_csk_ca(sk);
-    do_div(wait_us, 1000);
+    do_div(wait_us, 100);
+    pr_info("waiting %u us\n", wait_us);
     cpl->next_event_time = tcp_time_stamp + msecs_to_jiffies(wait_us);
 }
 
-void doWaitRel(
+static void doWaitRel(
     struct sock *sk,
     uint32_t rtt_factor
 ) {
     struct ccp *cpl = inet_csk_ca(sk);
     u64 rtt_us = cpl->mmt.rtt;
     u64 wait_us = rtt_factor * rtt_us;
-    do_div(wait_us, 1000);
+    do_div(wait_us, 100);
+    pr_info("waiting %llu us (%u/100 rtts) (rtt = %llu us)\n", wait_us, rtt_factor, rtt_us);
     cpl->next_event_time = tcp_time_stamp + msecs_to_jiffies(wait_us);
 }
 
@@ -76,11 +79,13 @@ void sendStateMachine(struct sock *sk) {
     struct tcp_sock *tp = tcp_sk(sk);
     struct PatternEvent ev;
     if (cpl->numPatternEvents == 0) {
+        pr_info("empty pattern\n");
         return;
     }
 
     if (unlikely(after(tcp_time_stamp, cpl->next_event_time))) {
         cpl->currPatternEvent = (cpl->currPatternEvent + 1) % cpl->numPatternEvents;
+        pr_info("curr pattern event: %d\n", cpl->currPatternEvent);
     } else {
         return;
     }
@@ -108,13 +113,46 @@ void sendStateMachine(struct sock *sk) {
     }
 }
 
+static void log_sequence(struct PatternEvent *seq, int numEvents) {
+    size_t  i;
+    struct PatternEvent ev;
+    pr_info("installed pattern:\n");
+    for (i = 0; i < numEvents; i++) {
+        ev = seq[i];
+        switch (ev.type) {
+        case SETRATEABS:
+            break;
+        case SETCWNDABS:
+            pr_info("[ev %lu] set cwnd %d\n", i, ev.val);
+            break;
+        case SETRATEREL:
+            break;
+        case WAITREL:
+            pr_info("[ev %lu] wait rtts %d/100\n", i, ev.val);
+            break;
+        case WAITABS:
+            pr_info("[ev %lu] wait %d us\n", i, ev.val);
+            break;
+        case REPORT:
+            pr_info("[ev %lu] send report\n", i);
+            break;
+        }
+    }
+}
+
 void installPattern(
     struct sock *sk,
     int numEvents,
     struct PatternEvent *seq
 ) {
     struct ccp *ca = inet_csk_ca(sk);
+
+    log_sequence(seq, numEvents);
+
     ca->numPatternEvents = numEvents;
-    ca->currPatternEvent = 0;
+    ca->currPatternEvent = numEvents - 1;
+    ca->next_event_time = tcp_time_stamp;
     ca->pattern = seq;
+
+    sendStateMachine(sk);
 }

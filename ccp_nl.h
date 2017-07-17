@@ -34,12 +34,6 @@ void nl_send_measurement(
     struct ccp_measurement mmt
 );
 
-enum drop_type {
-    DROP_TIMEOUT,
-    DROP_DUPACK,
-    DROP_ECN
-};
-
 int nl_send_drop_notif(
     struct sock *nl_sl,
     uint16_t ccp_index,

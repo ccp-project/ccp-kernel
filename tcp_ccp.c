@@ -27,16 +27,16 @@ void ccp_set_pacing_rate(struct sock *sk) {
 static int rate_sample_valid(const struct rate_sample *rs)
 {
   int ret = 0;
-  if ((rs->delivered > 0) && (rs->snd_int_us > 0) && (rs->rcv_int_us > 0) && (rs->interval_us > 0))
-    return 0;
   if (rs->delivered <= 0)
     ret |= 1;
   if (rs->snd_int_us <= 0)
-    ret |= 2;
+    ret |= 1 << 1;
   if (rs->rcv_int_us <= 0)
-    ret |= 4;
+    ret |= 1 << 2;
   if (rs->interval_us <= 0)
-    ret |= 8;
+    ret |= 1 << 3;
+  if (rs->rtt_us <= 0)
+    ret |= 1 << 4;
   return ret;
 }
 
@@ -67,13 +67,24 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
         return;
     }
     
-    //pr_info("ccp: rate_calculation: delivered %llu, MTU %d, S_TO_US %d, rcv_bw_bps %llu, rcv_int_us %lu, snd_bw_bps %llu, snd_int_us %lu rs_rtt %ld\n",
-    //        (u64) rs->delivered, MTU, S_TO_US, ca->mmt.rout, rs->rcv_int_us, ca->mmt.rin, rs->snd_int_us, rs->rtt_us);
+    //pr_info("new measurement: ack %u, rtt %u, rin %llu, rout %llu\n", 
+    //        curr_mmt.ack,
+    //        curr_mmt.rtt,
+    //        curr_mmt.rin,
+    //        curr_mmt.rout
+    //);
 
     ca->mmt.ack = curr_mmt.ack; // max()
     ca->mmt.rtt = ewma(ca->mmt.rtt, curr_mmt.rtt);
     ca->mmt.rin = ewma(ca->mmt.rin, curr_mmt.rin);
     ca->mmt.rout = ewma(ca->mmt.rout, curr_mmt.rout);
+    
+    //pr_info("curr measurement: ack %u, rtt %u, rin %llu, rout %llu\n", 
+    //        ca->mmt.ack,
+    //        ca->mmt.rtt,
+    //        ca->mmt.rin,
+    //        ca->mmt.rout
+    //);
      
     // rate control state machine
     sendStateMachine(sk);
@@ -113,8 +124,8 @@ EXPORT_SYMBOL_GPL(tcp_ccp_pkts_acked);
  * TCP_CA_CWR -> got an ECN
  */
 void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
-    struct ccp *cpl;
     enum drop_type dtype;
+    struct ccp *cpl = inet_csk_ca(sk);
     switch (new_state) {
         case TCP_CA_Recovery:
             printk(KERN_INFO "entered TCP_CA_Recovery (dupack drop)\n");
@@ -129,11 +140,16 @@ void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
             dtype = DROP_ECN;
             break;
         default:
-            printk(KERN_INFO "TCP normal state\n");
+            printk(KERN_INFO "entered TCP normal state\n");
+            cpl->last_drop_state = NO_DROP;
             return;
     }
 
-    cpl = inet_csk_ca(sk);
+    if (cpl->last_drop_state == dtype) {
+        return;
+    }
+
+    cpl->last_drop_state = dtype;
     if (!cpl->created) {
         return;
     }
@@ -167,6 +183,7 @@ void tcp_ccp_init(struct sock *sk) {
     cpl->next_event_time = tcp_time_stamp;
     cpl->currPatternEvent = 0;
     cpl->numPatternEvents = 0;
+    cpl->last_drop_state = NO_DROP;
 
     // send to CCP:
     // index of pointer back to this sock for IPC callback
