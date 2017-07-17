@@ -41,6 +41,10 @@ static int rate_sample_valid(const struct rate_sample *rs)
 }
 
 static u64 ewma(u64 old, u64 new) {
+    if (old == 0) {
+        return new;
+    }
+
     return ((new * CCP_EWMA_RECENCY) +
         (old * (CCP_FRAC_DENOM-CCP_EWMA_RECENCY))) / CCP_FRAC_DENOM;
 }
@@ -162,6 +166,12 @@ void tcp_ccp_init(struct sock *sk) {
     struct tcp_sock *tp;
     struct sock *nl_sk;
     struct ccp *cpl;
+    struct ccp_measurement init_mmt = {
+        .ack = 0,
+        .rtt = 0,
+        .rin = 0, /* send bandwidth in bytes per second */
+        .rout = 0, /* recv bandwidth in bytes per second */
+    };
     struct netlink_kernel_cfg cfg = {
         .input = nl_recv,
     };
@@ -184,6 +194,7 @@ void tcp_ccp_init(struct sock *sk) {
     cpl->currPatternEvent = 0;
     cpl->numPatternEvents = 0;
     cpl->last_drop_state = NO_DROP;
+    memcpy(&(cpl->mmt), &init_mmt, sizeof(struct ccp_measurement));
 
     // send to CCP:
     // index of pointer back to this sock for IPC callback

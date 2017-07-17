@@ -20,8 +20,6 @@ static void doSetRateAbs(
 ) {
     struct ccp *ca = inet_csk_ca(sk);
 
-    // rate is * 100
-    do_div(rate, 100);
     printk(KERN_INFO "rate (Bytes/s) -> %u\n", rate);
     ca->rate = rate;
     ccp_set_pacing_rate(sk);
@@ -50,6 +48,10 @@ static void doReport(
     pr_info("sending report\n");
     check_nlsk_created(cpl, tp->snd_una);
     nl_send_measurement(cpl->nl_sk, cpl->ccp_index, mmt);
+
+    cpl->mmt.rtt = 0;
+    cpl->mmt.rin = 0;
+    cpl->mmt.rout = 0;
 }
 
 static void doWaitAbs(
@@ -57,7 +59,6 @@ static void doWaitAbs(
     uint32_t wait_us
 ) {
     struct ccp *cpl = inet_csk_ca(sk);
-    do_div(wait_us, 100);
     pr_info("waiting %u us\n", wait_us);
     cpl->next_event_time = tcp_time_stamp + usecs_to_jiffies(wait_us);
 }
@@ -121,11 +122,13 @@ static void log_sequence(struct PatternEvent *seq, int numEvents) {
         ev = seq[i];
         switch (ev.type) {
         case SETRATEABS:
+            pr_info("[ev %lu] set rate %u\n", i, ev.val);
             break;
         case SETCWNDABS:
             pr_info("[ev %lu] set cwnd %d\n", i, ev.val);
             break;
         case SETRATEREL:
+            pr_info("[ev %lu] set rate factor %u/100\n", i, ev.val);
             break;
         case WAITREL:
             pr_info("[ev %lu] wait rtts %d/100\n", i, ev.val);
