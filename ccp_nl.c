@@ -242,6 +242,7 @@ int nl_send_drop_notif(
     int msg_size;
     
     if (ccp_index < 1) {
+        pr_info("ccp_index malformed: %d\n", ccp_index);
         return -1;
     }
 

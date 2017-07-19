@@ -209,7 +209,6 @@ struct ccp {
     struct ccp_measurement mmt;
 
     // communication
-    bool created;
     uint16_t ccp_index;
 };
 

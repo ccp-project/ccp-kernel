@@ -152,10 +152,6 @@ void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
     }
 
     cpl->last_drop_state = dtype;
-    if (!cpl->created) {
-        return;
-    }
-
     nl_send_drop_notif(cpl->ccp_index, dtype);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
