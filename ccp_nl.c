@@ -1,15 +1,23 @@
-#include <linux/net.h>
 #include <net/tcp.h>
 
-#include "ccp_nl.h"
-#include "serialize.h"
-#include "stateMachine.h"
+#include "tcp_ccp.h"
 
 #define CCP_MULTICAST_GROUP 22
 #define MAX_NUM_CONNECTIONS 100
 
 // array of active connections
 struct ccp_connection* ccp_active_connections;
+
+// netlink socket
+struct sock *ccp_nl_sk;
+
+void set_ccp_nl_sk(struct sock *sk) {
+    ccp_nl_sk = sk;
+}
+
+void free_ccp_nl_sk(void) {
+    netlink_kernel_release(ccp_nl_sk);
+}
 
 // initialize the ccp active connections list
 // return -1 on allocation failure, should abort loading module
@@ -96,20 +104,6 @@ void ccp_connection_free(uint16_t sid) {
     return;
 }
 
-void check_nlsk_created(
-    struct ccp *cpl,
-    u32 una
-) {
-    int ok;
-    if (unlikely(!cpl->created)) {
-        // send to CCP:
-        // index of pointer back to this sock for IPC callback
-        // first ack to expect
-        ok = nl_send_conn_create(cpl->nl_sk, cpl->ccp_index, una);
-        cpl->created = (ok >= 0);
-    }
-}
-
 // callback from userspace ccp
 // all messages will be PatternMsg
 // lookup ccp socket id, install new pattern
@@ -146,7 +140,6 @@ void nl_recv(struct sk_buff *skb) {
 
 // send IPC message to userspace ccp
 static int nl_sendmsg(
-    struct sock *nl_sk, 
     char *msg, 
     int msg_size
 ) {
@@ -179,7 +172,7 @@ static int nl_sendmsg(
     // reflect this."
     // Use an allocation without __GFP_DIRECT_RECLAIM
     res = nlmsg_multicast(
-        nl_sk,               // @sk: netlink socket to spread messages to
+        ccp_nl_sk,               // @sk: netlink socket to spread messages to
         skb_out,             // @skb: netlink message as socket buffer
         0,                   // @portid: own netlink portid to avoid sending to yourself
         CCP_MULTICAST_GROUP, // @group: multicast group id
@@ -194,7 +187,6 @@ static int nl_sendmsg(
 
 // send create msg
 int nl_send_conn_create(
-    struct sock *nl_sk, 
     uint16_t ccp_index, 
     uint32_t startSeq
 ) {
@@ -209,7 +201,7 @@ int nl_send_conn_create(
     printk(KERN_INFO "sending create: id=%u, startSeq=%u\n", ccp_index, startSeq);
 
     msg_size = writeCreateMsg(msg, BIGGEST_MSG_SIZE, ccp_index, startSeq, "reno");
-    ok = nl_sendmsg(nl_sk, msg, msg_size);
+    ok = nl_sendmsg(msg, msg_size);
     if (ok < 0) {
         printk(KERN_INFO "create notif failed: id=%u, err=%d\n", ccp_index, ok);
     }
@@ -220,7 +212,6 @@ int nl_send_conn_create(
 // send datapath measurements
 // acks, rtt, rin, rout
 void nl_send_measurement(
-    struct sock *nl_sk, 
     uint16_t ccp_index, 
     struct ccp_measurement mmt
 ) {
@@ -236,14 +227,13 @@ void nl_send_measurement(
     msg_size = writeMeasureMsg(msg, BIGGEST_MSG_SIZE, ccp_index, mmt.ack, mmt.rtt, mmt.rin, mmt.rout);
     // it's ok if this send fails
     // will auto-retry on the next ack
-    ok = nl_sendmsg(nl_sk, msg, msg_size);
+    ok = nl_sendmsg(msg, msg_size);
     if (ok < 0) {
         printk(KERN_INFO "mmt notif failed: id=%u, cumAck=%u, rtt=%u, rin=%llu, rout=%llu\n", ccp_index, mmt.ack, mmt.rtt, mmt.rin, mmt.rout);
     }
 }
 
 int nl_send_drop_notif(
-    struct sock *nl_sk,
     uint16_t ccp_index,
     enum drop_type dtype
 ) {
@@ -272,7 +262,7 @@ int nl_send_drop_notif(
             return -2;
     }
         
-    ok = nl_sendmsg(nl_sk, msg, msg_size);
+    ok = nl_sendmsg(msg, msg_size);
     if (ok < 0) {
         printk(KERN_INFO "drop notif failed: id=%u, ev=%d, err=%d\n", ccp_index, dtype, ok);
     }

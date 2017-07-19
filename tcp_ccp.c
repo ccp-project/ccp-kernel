@@ -2,8 +2,6 @@
 #include <net/tcp.h>
 
 #include "tcp_ccp.h"
-#include "ccp_nl.h"
-#include "stateMachine.h"
 
 #define CCP_FRAC_DENOM 10
 #define CCP_EWMA_RECENCY 6
@@ -158,13 +156,13 @@ void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
         return;
     }
 
-    nl_send_drop_notif(cpl->nl_sk, cpl->ccp_index, dtype);
+    nl_send_drop_notif(cpl->ccp_index, dtype);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
 
 void tcp_ccp_init(struct sock *sk) {
+    int ok;
     struct tcp_sock *tp;
-    struct sock *nl_sk;
     struct ccp *cpl;
     struct ccp_measurement init_mmt = {
         .ack = 0,
@@ -172,24 +170,13 @@ void tcp_ccp_init(struct sock *sk) {
         .rin = 0, /* send bandwidth in bytes per second */
         .rout = 0, /* recv bandwidth in bytes per second */
     };
-    struct netlink_kernel_cfg cfg = {
-        .input = nl_recv,
-    };
-
-    printk(KERN_INFO "init NL\n");
-
-    nl_sk = netlink_kernel_create(&init_net, NETLINK_USERSOCK, &cfg);
-    if (!nl_sk) {
-        printk(KERN_ALERT "Error creating socket.\n");
-        return;
-    }
 
     // store initialized netlink sock ptr in connection state
     tp = tcp_sk(sk);
     cpl = inet_csk_ca(sk);
-    // if returned 0, don't communicate with ccp
     cpl->ccp_index = ccp_connection_start(sk);
-    cpl->nl_sk = nl_sk;
+    pr_info("ccp: starting connection %d", cpl->ccp_index);
+    
     cpl->next_event_time = tcp_time_stamp;
     cpl->currPatternEvent = 0;
     cpl->numPatternEvents = 0;
@@ -199,15 +186,17 @@ void tcp_ccp_init(struct sock *sk) {
     // send to CCP:
     // index of pointer back to this sock for IPC callback
     // first ack to expect
-    check_nlsk_created(cpl, tp->snd_una);
+    ok = nl_send_conn_create(cpl->ccp_index, tp->snd_una);
+    if (!ok) {
+        pr_info("failed to send create message: %d", ok);
+    }
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_init);
 
 void tcp_ccp_release(struct sock *sk) {
     struct ccp *cpl = inet_csk_ca(sk);
-    printk(KERN_INFO "exit NL\n");
+    pr_info("ccp: freeing connection %d", cpl->ccp_index);
     ccp_connection_free(cpl->ccp_index);
-    netlink_kernel_release(cpl->nl_sk);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_release);
 
@@ -227,13 +216,25 @@ struct tcp_congestion_ops tcp_ccp_congestion_ops = {
 
 static int __init tcp_ccp_register(void) {
     int ok;
+    struct sock *nl_sk;
+    struct netlink_kernel_cfg cfg = {
+        .input = nl_recv,
+    };
 
     printk(KERN_INFO "Init ccp\n");
-
     ok = ccp_init_connection_map();
     if (ok < 0) {
         return -1;
     }
+
+    nl_sk = netlink_kernel_create(&init_net, NETLINK_USERSOCK, &cfg);
+    if (!nl_sk) {
+        printk(KERN_ALERT "Error creating netlink socket.\n");
+        return -1;
+    }
+   
+    set_ccp_nl_sk(nl_sk);
+    printk(KERN_INFO "init NL\n");
     
     return tcp_register_congestion_control(&tcp_ccp_congestion_ops);
 }
@@ -241,6 +242,7 @@ static int __init tcp_ccp_register(void) {
 static void __exit tcp_ccp_unregister(void) {
     printk(KERN_INFO "Exit ccp\n");
     ccp_free_connection_map();
+    free_ccp_nl_sk();
     tcp_unregister_congestion_control(&tcp_ccp_congestion_ops);
 }
 

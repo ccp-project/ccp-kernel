@@ -1,8 +1,6 @@
 #include <net/tcp.h>
 
-#include "stateMachine.h"
 #include "tcp_ccp.h"
-#include "ccp_nl.h"
 
 static void doSetCwndAbs(
     struct tcp_sock *tp, 
@@ -43,11 +41,9 @@ static void doReport(
     struct sock *sk
 ) {
     struct ccp *cpl = inet_csk_ca(sk);
-    struct tcp_sock *tp = tcp_sk(sk);
     struct ccp_measurement mmt = cpl->mmt;
     pr_info("sending report\n");
-    check_nlsk_created(cpl, tp->snd_una);
-    nl_send_measurement(cpl->nl_sk, cpl->ccp_index, mmt);
+    nl_send_measurement(cpl->ccp_index, mmt);
 
     cpl->mmt.rtt = 0;
     cpl->mmt.rin = 0;
@@ -80,7 +76,6 @@ void sendStateMachine(struct sock *sk) {
     struct tcp_sock *tp = tcp_sk(sk);
     struct PatternEvent ev;
     if (cpl->numPatternEvents == 0) {
-        pr_info("empty pattern\n");
         return;
     }
 

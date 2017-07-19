@@ -1,6 +1,6 @@
 #include <linux/string.h>
 
-#include "serialize.h"
+#include "tcp_ccp.h"
 
 int readHeader(struct CcpMsgHeader *hdr, char *buf) {
     memcpy(hdr, buf, sizeof(struct CcpMsgHeader));

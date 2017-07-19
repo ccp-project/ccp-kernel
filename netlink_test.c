@@ -4,7 +4,6 @@
 #include <linux/gfp.h>
 #include <net/sock.h>
 
-#include "serialize.h"
 #include "tcp_ccp.h"
 
 #define MYMGRP 22
