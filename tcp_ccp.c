@@ -183,7 +183,7 @@ void tcp_ccp_init(struct sock *sk) {
     // index of pointer back to this sock for IPC callback
     // first ack to expect
     ok = nl_send_conn_create(cpl->ccp_index, tp->snd_una);
-    if (!ok) {
+    if (ok < 0) {
         pr_info("failed to send create message: %d", ok);
     }
 }

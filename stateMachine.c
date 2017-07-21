@@ -72,10 +72,19 @@ static void doWaitRel(
 }
 
 void sendStateMachine(struct sock *sk) {
+    int ok;
     struct ccp *cpl = inet_csk_ca(sk);
     struct tcp_sock *tp = tcp_sk(sk);
     struct PatternEvent ev;
     if (cpl->numPatternEvents == 0) {
+        // try contacting the CCP again
+        // index of pointer back to this sock for IPC callback
+        // first ack to expect
+        ok = nl_send_conn_create(cpl->ccp_index, tp->snd_una);
+        if (ok < 0) {
+            pr_info("failed to send create message: %d", ok);
+        }
+
         return;
     }
 
