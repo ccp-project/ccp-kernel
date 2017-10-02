@@ -28,20 +28,24 @@ and load the ccp-kernel modules from the master branch (use `modprobe`
 or `insmod` to load the compiled .ko module). Once loaded, you should
 see ccp as one of the available TCP congestion control algorithms:
 
+```
 sudo sysctl net.ipv4.tcp_available_congestion_control
+```
 
 You should add the CCP to the list of allowed congestion control
-algorithms, and make FQ your default qdisc (Nimbus uses FQ for packet
+algorithms, and make FQ your default qdisc (FQ is used for packet
 pacing):
 
+```
 sudo sysctl -w net.ipv4.tcp_allowed_congestion_control="cubic reno ccp"
 sudo sysctl -w net.core.default_qdisc=fq
+```
 
 You've now started the CCP data path in the Linux kernel. 
 To run new CCP transport algorithms, you must set up and run the
 CCP user-space (https://github.mit.edu/nebula/ccp) separately.
 
-## (3) Testing CCP
+## (3) Test CCP
 
 After setting up both the user-space (ccp) and kernel (ccp-kernel) components, 
 you can use applications using the standard socket API (e.g., `iperf`) to run transfers over
