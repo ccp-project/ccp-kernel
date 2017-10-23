@@ -1,6 +1,7 @@
 #include "tcp_ccp.h"
 #include "ccp_nl.h"
 #include "libccp/ccp.h"
+#include "ccpkp/ccpkp.h"
 
 #include <linux/module.h>
 #include <linux/time64.h>
@@ -392,6 +393,11 @@ static int __init tcp_ccp_register(void) {
         return -1;
     }
 
+    ok = ccpkp_init();
+    if (ok < 0) {
+		    return -1;
+    }
+
     printk(KERN_INFO "Init ccp: %lu\n", sizeof(struct ccp));
     return tcp_register_congestion_control(&tcp_ccp_congestion_ops);
 }
@@ -401,6 +407,7 @@ static void __exit tcp_ccp_unregister(void) {
     ccp_free();
     free_ccp_nl_sk();
     tcp_unregister_congestion_control(&tcp_ccp_congestion_ops);
+    ccpkp_cleanup();
 }
 
 module_init(tcp_ccp_register);
