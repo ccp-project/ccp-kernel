@@ -56,6 +56,7 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     struct ccp_measurement curr_mmt = {
         .ack = tp->snd_una,
         .rtt = rs->rtt_us,
+        .loss = rs->losses,
         .rin = 0, /* send bandwidth in bytes per second */
         .rout = 0, /* recv bandwidth in bytes per second */
     };
@@ -68,7 +69,7 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     } else {
         return;
     }
-    
+
     //pr_info("new measurement: ack %u, rtt %u, rin %llu, rout %llu\n", 
     //        curr_mmt.ack,
     //        curr_mmt.rtt,
@@ -80,6 +81,7 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     ca->mmt.rtt = ewma(ca->mmt.rtt, curr_mmt.rtt);
     ca->mmt.rin = ewma(ca->mmt.rin, curr_mmt.rin);
     ca->mmt.rout = ewma(ca->mmt.rout, curr_mmt.rout);
+    ca->mmt.loss = curr_mmt.loss;
     
     //pr_info("curr measurement: ack %u, rtt %u, rin %llu, rout %llu\n", 
     //        ca->mmt.ack,
@@ -165,6 +167,7 @@ void tcp_ccp_init(struct sock *sk) {
         .rtt = 0,
         .rin = 0, /* send bandwidth in bytes per second */
         .rout = 0, /* recv bandwidth in bytes per second */
+        .loss = 0,
     };
 
     // store initialized netlink sock ptr in connection state
@@ -177,6 +180,7 @@ void tcp_ccp_init(struct sock *sk) {
     cpl->currPatternEvent = 0;
     cpl->numPatternEvents = 0;
     cpl->last_drop_state = NO_DROP;
+    cpl->num_loss = 0;
     memcpy(&(cpl->mmt), &init_mmt, sizeof(struct ccp_measurement));
 
     // send to CCP:

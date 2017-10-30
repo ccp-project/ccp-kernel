@@ -88,6 +88,7 @@ int writeMeasureMsg(
     uint32_t sid, 
     uint32_t ackNo, 
     uint32_t rtt,
+    uint32_t loss,
     uint64_t rin,
     uint64_t rout
 ) {
@@ -95,13 +96,14 @@ int writeMeasureMsg(
     size_t ret;
     struct CcpMsgHeader hdr = {
         .Type = MEASURE, 
-        .Len = 30, 
+        .Len = 34,
         .SocketId = sid,
     };
 
     struct MeasureMsg msg = {
         .ackNo = ackNo,
         .rtt = rtt,
+        .loss = loss,
         .rin = rin,
         .rout = rout,
     };

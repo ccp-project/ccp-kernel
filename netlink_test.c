@@ -84,7 +84,7 @@ static void nl_recv_msg(struct sk_buff *skb) {
         }
     }
 
-    //msg_size = writeMeasureMsg(msg, 30, 42, 1461, 255, 0, 0);
+    //msg_size = writeMeasureMsg(msg, 30, 42, 1461, 255, 0, 0, 0);
     //pr_info("msg_size: %d\n", msg_size);
     //log_msg(msg, msg_size);
 

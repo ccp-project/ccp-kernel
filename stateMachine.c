@@ -42,12 +42,14 @@ static void doReport(
 ) {
     struct ccp *cpl = inet_csk_ca(sk);
     struct ccp_measurement mmt = cpl->mmt;
+
     pr_info("sending report\n");
     nl_send_measurement(cpl->ccp_index, mmt);
 
     cpl->mmt.rtt = 0;
     cpl->mmt.rin = 0;
     cpl->mmt.rout = 0;
+    cpl->mmt.loss = 0;
 }
 
 static void doWaitAbs(

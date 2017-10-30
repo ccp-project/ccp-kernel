@@ -223,13 +223,13 @@ void nl_send_measurement(
         return;
     }
         
-    printk(KERN_INFO "sending measurement notif: id=%u, cumAck=%u, rtt=%u, rin=%llu, rout=%llu\n", ccp_index, mmt.ack, mmt.rtt, mmt.rin, mmt.rout);
-    msg_size = writeMeasureMsg(msg, BIGGEST_MSG_SIZE, ccp_index, mmt.ack, mmt.rtt, mmt.rin, mmt.rout);
+    printk(KERN_INFO "sending measurement notif: id=%u, cumAck=%u, rtt=%u, loss=%u, rin=%llu, rout=%llu\n", ccp_index, mmt.ack, mmt.rtt, mmt.loss, mmt.rin, mmt.rout);
+    msg_size = writeMeasureMsg(msg, BIGGEST_MSG_SIZE, ccp_index, mmt.ack, mmt.rtt, mmt.loss, mmt.rin, mmt.rout);
     // it's ok if this send fails
     // will auto-retry on the next ack
     ok = nl_sendmsg(msg, msg_size);
     if (ok < 0) {
-        printk(KERN_INFO "mmt notif failed: id=%u, cumAck=%u, rtt=%u, rin=%llu, rout=%llu\n", ccp_index, mmt.ack, mmt.rtt, mmt.rin, mmt.rout);
+        printk(KERN_INFO "mmt notif failed: id=%u, cumAck=%u, rtt=%u, loss=%u, rin=%llu, rout=%llu\n", ccp_index, mmt.ack, mmt.rtt, mmt.loss, mmt.rin, mmt.rout);
     }
 }
 

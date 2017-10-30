@@ -38,11 +38,12 @@ struct __attribute__((packed, aligned(4))) CreateMsg {
 };
 
 /* 
- * MEASURE: 2 u32, 2 u64, no str
+ * MEASURE: 3 u32, 2 u64, no str
  */
 struct __attribute__((packed, aligned(4))) MeasureMsg {
     uint32_t ackNo;
     uint32_t rtt;
+    uint32_t loss;
     uint64_t rin;
     uint64_t rout;
 };
@@ -110,6 +111,7 @@ int writeMeasureMsg(
     uint32_t sid, 
     uint32_t ackNo, 
     uint32_t rtt,
+    uint32_t loss,
     uint64_t rin,
     uint64_t rout
 );
@@ -151,6 +153,7 @@ int readPattern(
 struct ccp_measurement {
     u32 ack;
     u32 rtt;
+    u32 loss;
     u64 rin;
     u64 rout;
 };
@@ -204,6 +207,7 @@ struct ccp {
     uint8_t numPatternEvents;
     u32 next_event_time;
     enum drop_type last_drop_state;
+    uint32_t num_loss;
 
     // measurement
     struct ccp_measurement mmt;
