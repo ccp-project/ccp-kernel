@@ -41,15 +41,20 @@ static void doReport(
     struct sock *sk
 ) {
     struct ccp *cpl = inet_csk_ca(sk);
-    struct ccp_measurement mmt = cpl->mmt;
+    struct ccp_instruction_list *instr = ccp_instruction_list_lookup(cpl->ccp_index);
+    // TODO: update this
+    struct ccp_measurement mmt = 
+    {
+        .ack = (u32)instr->state_registers[ACK],
+        .rtt = (u32)instr->state_registers[RTT],
+        .loss = (u32)instr->state_registers[LOSS],
+        .rin = instr->state_registers[RIN],
+        .rout = instr->state_registers[ROUT]
+    };
 
     pr_info("sending report\n");
     nl_send_measurement(cpl->ccp_index, mmt);
 
-    cpl->mmt.rtt = 0;
-    cpl->mmt.rin = 0;
-    cpl->mmt.rout = 0;
-    cpl->mmt.loss = 0;
 }
 
 static void doWaitAbs(

@@ -11,13 +11,14 @@ void ccp_set_pacing_rate(struct sock *sk) {
     struct ccp *ca = inet_csk_ca(sk);
     u64 segs_in_flight; /* desired cwnd as rate * rtt */
     sk->sk_pacing_rate = ca->rate;
+
     if (likely(ca->mmt.rtt > 0)) {
         segs_in_flight = (u64)ca->rate * ca->mmt.rtt;
         do_div(segs_in_flight, MTU);
         do_div(segs_in_flight, S_TO_US);
         pr_info("ccp: Setting new rate %d Mbit/s (%d Bps) (cwnd %llu)\n", ca->rate / 125000, ca->rate, segs_in_flight + 3);
-        /* Add few more segments to segs_to_flight to prevent rate underflow due to 
-         * temporary RTT fluctuations. */
+         //Add few more segments to segs_to_flight to prevent rate underflow due to 
+         //temporary RTT fluctuations.
         tp->snd_cwnd = segs_in_flight + 3;
     }
 }
@@ -38,58 +39,177 @@ static int rate_sample_valid(const struct rate_sample *rs)
   return ret;
 }
 
-static u64 ewma(u64 old, u64 new) {
-    if (old == 0) {
-        return new;
+void load_primitives( struct sock *sk, const struct rate_sample *rs) {
+    // load the primitive registers of the rate sample - convert all to u64
+    // raw values, not averaged
+    struct tcp_sock *tp = tcp_sk(sk);
+    struct ccp *ca = inet_csk_ca(sk);
+    u64 ack = (u64)(tp->snd_una);
+    u64 rtt = (u64)(rs->rtt_us);
+    u64 loss = (u64)(rs->losses);
+    u64 rin = 0; // send bandwidth in bytes per second
+    u64 rout = 0; // recv bandwidth in bytes per second
+    int measured_valid_rate = rate_sample_valid(rs);
+    pr_info("LOSS is %llu\n", loss);
+    if ( measured_valid_rate == 0 ) {
+       rin = rout  = (u64)rs->delivered * MTU * S_TO_US;
+       do_div(rin, rs->snd_int_us);
+       do_div(rout, rs->rcv_int_us);
+    } else {
+        return;
+    }
+    ca->mmt.ack = ack;
+    ca->mmt.rtt = rtt;
+    ca->mmt.loss = loss;
+    ca->mmt.rin = rin;
+    ca->mmt.rout = rout;
+    return;
+}
+
+// read values given a register
+u64 read_reg(struct Register reg, struct ccp *ca, struct ccp_instruction_list* instr) {
+    switch (reg.type) {
+        case STATE_REG:
+            return instr->state_registers[reg.index];
+        case TMP_REG:
+            return instr->tmp_registers[reg.index];
+        case PRIMITIVE_REG:
+            switch (reg.index) {
+                case ACK:
+                    return ca->mmt.ack;
+                case RTT:
+                    return ca->mmt.rtt;
+                case LOSS:
+                    return ca->mmt.loss;
+                case RIN:
+                    return ca->mmt.rin;
+                case ROUT:
+                    return ca->mmt.rout;
+                default:
+                    return 0;
+            }
+            break;
+        case CONST_REG:
+            return reg.value;
+        default:
+            return 0;
+    }
+    return 0;
+}
+
+// write values given a register and a value
+void write_reg(struct Register reg, u64 value, struct ccp_instruction_list *instr) {
+    switch (reg.type) {
+        case STATE_REG:
+            pr_info("valu: %llu, index: %d\n", value, reg.index);
+            instr->state_registers[reg.index] = value;
+            break;
+        case TMP_REG:
+            instr->tmp_registers[reg.index] = value;
+            break;
+        default:
+            pr_info("Trying to write into register with type %d\n", reg.type);
+            break;
     }
 
-    return ((new * CCP_EWMA_RECENCY) +
-        (old * (CCP_FRAC_DENOM-CCP_EWMA_RECENCY))) / CCP_FRAC_DENOM;
+}
+void update_state_registers(struct ccp *ca) {
+    // updates dates all the state registers
+    // first grab the relevant instruction set
+    struct ccp_instruction_list *instr;
+    // for now - just RTT - at state index 0
+    int i;
+    u64 arg1;
+    u64 arg2;
+    u64 arg0; // for ewma and if and not if
+    int num_instructions;
+    struct Instruction64 current_instruction;
+    pr_info("about to try to dereference the instr_list for ccp index %d\n", ca->ccp_index);
+    instr = ccp_instruction_list_lookup(ca->ccp_index);
+    pr_info("deferenced the instr_list for ccp index %d\n", ca->ccp_index);
+
+    num_instructions = instr->num_instructions;
+    pr_info("Num instr is %d\n", num_instructions);
+    for ( i = 0; i < num_instructions; i++ ) {
+        current_instruction = instr->fold_instructions[i];
+        pr_info("Trying to read registers");
+        arg1 = read_reg(current_instruction.r1, ca, instr);
+        arg2 = read_reg(current_instruction.r2, ca, instr);
+        pr_info("Op: %d, arg1: %llu, arg2: %llu\n", current_instruction.op, arg1, arg2);
+        switch (current_instruction.op) {
+            case ADD64:
+                pr_info("Reg 1 type: %d, Reg 1 index: %d\n", current_instruction.r1.type, current_instruction.r1.index);
+                pr_info("Arg1: %llu, Arg2: %llu\n", arg1, arg2);
+                write_reg(current_instruction.rStore, myadd64(arg1, arg2), instr);
+                break;
+            case DIV64:
+                write_reg(current_instruction.rStore, mydiv64(arg1, arg2), instr);
+                break;
+            case EQUIV64:
+                write_reg(current_instruction.rStore, myequiv64(arg1, arg2), instr);
+                break;
+            case EWMA64:
+                arg0 = read_reg(current_instruction.rStore, ca, instr);
+                write_reg(current_instruction.rStore, myewma64(arg1, arg0, arg2), instr);
+                break;
+            case GT64:
+                write_reg(current_instruction.rStore, mygt64(arg1, arg2), instr);
+                break;
+            case LT64:
+                write_reg(current_instruction.rStore, mylt64(arg1, arg2), instr);
+                break;
+            case MAX64:
+                write_reg(current_instruction.rStore, mymax64(arg1, arg2), instr);
+                break;
+            case MIN64:
+                write_reg(current_instruction.rStore, mymin64(arg1, arg2), instr);
+                break;
+            case MUL64:
+                write_reg(current_instruction.rStore, mymul64(arg1, arg2), instr);
+                break;
+            case SUB64:
+                write_reg(current_instruction.rStore, mysub64(arg1, arg2), instr);
+                break;
+            case IFCNT64: // if arg1, adds 1 to register in rStore
+                if (arg1 == 1) {
+                    write_reg(current_instruction.rStore, myadd64(1, arg2), instr);                 
+                }
+                break;
+            case IFNOTCNT64:
+                if (arg1 == 0) {
+                    write_reg(current_instruction.rStore, myadd64(1, arg2), instr);
+                }
+                break;
+            case BIND64: // take arg1, and put it in rStore
+                pr_info("Arg 1 we're gonna write in is %llu\n", arg1);
+                write_reg(current_instruction.rStore, arg1, instr);
+            default:
+                break;
+            
+        }
+
+    }
 }
 
 void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     // aggregate measurement
     // state = fold(state, rs)
     // TODO custom fold functions (for now, default only all fields)
-    struct tcp_sock *tp = tcp_sk(sk);
+
     struct ccp *ca = inet_csk_ca(sk);
-    struct ccp_measurement curr_mmt = {
-        .ack = tp->snd_una,
-        .rtt = rs->rtt_us,
-        .loss = rs->losses,
-        .rin = 0, /* send bandwidth in bytes per second */
-        .rout = 0, /* recv bandwidth in bytes per second */
-    };
+    struct ccp_instruction_list* instr = ccp_instruction_list_lookup(ca->ccp_index);
 
-    int measured_valid_rate = rate_sample_valid(rs);
-    if (measured_valid_rate == 0) {
-        curr_mmt.rin = curr_mmt.rout = (u64)rs->delivered * MTU * S_TO_US;
-        do_div(curr_mmt.rin, rs->snd_int_us);
-        do_div(curr_mmt.rout, rs->rcv_int_us);
-    } else {
-        return;
-    }
+    // load primitive registers
+    load_primitives(sk, rs);
+    // update the signal state
+    update_state_registers(ca);
 
-    //pr_info("new measurement: ack %u, rtt %u, rin %llu, rout %llu\n", 
-    //        curr_mmt.ack,
-    //        curr_mmt.rtt,
-    //        curr_mmt.rin,
-    //        curr_mmt.rout
-    //);
 
-    ca->mmt.ack = curr_mmt.ack; // max()
-    ca->mmt.rtt = ewma(ca->mmt.rtt, curr_mmt.rtt);
-    ca->mmt.rin = ewma(ca->mmt.rin, curr_mmt.rin);
-    ca->mmt.rout = ewma(ca->mmt.rout, curr_mmt.rout);
-    ca->mmt.loss = curr_mmt.loss;
-    
-    //pr_info("curr measurement: ack %u, rtt %u, rin %llu, rout %llu\n", 
-    //        ca->mmt.ack,
-    //        ca->mmt.rtt,
-    //        ca->mmt.rin,
-    //        ca->mmt.rout
-    //);
-     
+    pr_info("Prim ack: %llu, our ack: %llu\n", ca->mmt.ack, instr->state_registers[ACK]);
+    pr_info("Prim rtt: %llu, our rtt: %llu\n", ca->mmt.rtt, instr->state_registers[RTT]);
+    pr_info("Prim rin: %llu, our rin: %llu\n", ca->mmt.rin, instr->state_registers[RIN]);
+    pr_info("Prim rout: %llu, our rout: %llu\n", ca->mmt.rout, instr->state_registers[ROUT]);
+    pr_info("Prim loss: %llu, our loss : %llu\n", ca->mmt.loss, instr->state_registers[LOSS]); 
     // rate control state machine
     sendStateMachine(sk);
 }
@@ -162,14 +282,15 @@ void tcp_ccp_init(struct sock *sk) {
     int ok;
     struct tcp_sock *tp;
     struct ccp *cpl;
-    struct ccp_measurement init_mmt = {
+    struct ccp_instruction_list *instr_list;
+    struct ccp_primitives init_mmt = {
         .ack = 0,
         .rtt = 0,
-        .rin = 0, /* send bandwidth in bytes per second */
-        .rout = 0, /* recv bandwidth in bytes per second */
         .loss = 0,
+        .rin = 0,
+        .rout = 0
     };
-
+    pr_info("In init ccp flow function pls get to this print function omg\n");
     // store initialized netlink sock ptr in connection state
     tp = tcp_sk(sk);
     cpl = inet_csk_ca(sk);
@@ -180,9 +301,8 @@ void tcp_ccp_init(struct sock *sk) {
     cpl->currPatternEvent = 0;
     cpl->numPatternEvents = 0;
     cpl->last_drop_state = NO_DROP;
-    cpl->num_loss = 0;
-    memcpy(&(cpl->mmt), &init_mmt, sizeof(struct ccp_measurement));
 
+    memcpy(&(cpl->mmt), &init_mmt, sizeof(struct ccp_primitives));
     // send to CCP:
     // index of pointer back to this sock for IPC callback
     // first ack to expect
@@ -190,6 +310,11 @@ void tcp_ccp_init(struct sock *sk) {
     if (ok < 0) {
         pr_info("failed to send create message: %d", ok);
     }
+    pr_info("Size of ccp struct is %lu\n", sizeof(struct ccp));
+    instr_list = ccp_instruction_list_lookup(cpl->ccp_index);
+    pr_info("Num instructions in thing is %d\n", instr_list->num_instructions);
+
+
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_init);
 
@@ -223,6 +348,10 @@ static int __init tcp_ccp_register(void) {
 
     printk(KERN_INFO "Init ccp\n");
     ok = ccp_init_connection_map();
+    if (ok < 0) {
+        return -1;
+    }
+    ok = ccp_init_fold_map();
     if (ok < 0) {
         return -1;
     }
