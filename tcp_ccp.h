@@ -2,7 +2,7 @@
 #define TCP_CCP_H
 
 #include <linux/net.h>
-
+#include "libccp/common_headers.h"
 /* -----------------------------------------------------------------------------
  * CCP TCP state
  * -----------------------------------------------------------------------------
@@ -25,10 +25,5 @@ struct ccp {
 
 void ccp_set_pacing_rate(struct sock *sk);
 
-/* -----------------------------------------------------------------------------
- * CCP Sending State Machine Management 
- * -----------------------------------------------------------------------------
- */
-void load_dummy_instr(struct ccp_instruction_list *instructions);
 
 #endif

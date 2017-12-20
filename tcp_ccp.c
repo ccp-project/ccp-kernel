@@ -1,4 +1,5 @@
-#include "ccp_nl.h"
+#include "tcp_ccp.h"
+#include "ccp_nl.h" // TODO: are you even supposed to include this here
 #include "libccp/ccp.h"
 #include "libccp/serialize.h"
 
@@ -9,9 +10,9 @@
 #define CCP_EWMA_RECENCY 6
 
 void ccp_set_pacing_rate(struct sock *sk) {
-    struct tcp_sock *tp = tcp_sk(sk);
+    // struct tcp_sock *tp = tcp_sk(sk); (unused?)
     struct ccp *ca = inet_csk_ca(sk);
-    u64 segs_in_flight; /* desired cwnd as rate * rtt */
+    // u64 segs_in_flight; /* desired cwnd as rate * rtt */ (unused?)
     sk->sk_pacing_rate = ca->rate;
     pr_info("ccp: Setting new rate %d Mbit/s (%d Bps)\n", ca->rate / 125000, ca->rate);
 
@@ -85,18 +86,19 @@ static void do_set_rate_rel(
 ) {
     struct sock *sk;
     struct ccp *ca;
+    uint64_t newrate;
     get_sock_from_ccp(sk, dp);
     ca = inet_csk_ca(sk);
 
     // factor is * 100
-    uint64_t newrate = ca->rate * factor;
+    newrate = ca->rate * factor;
     do_div(newrate, 100);
     printk(KERN_INFO "rate -> %llu\n", newrate);
     ca->rate = (u32) newrate;
     ccp_set_pacing_rate(sk);
 }
 
-static struct ccp_measurement *get_ccp_primitives(
+static struct ccp_primitives *get_ccp_primitives(
     struct ccp_connection *dp
 ) {
     struct sock *sk;
@@ -104,9 +106,36 @@ static struct ccp_measurement *get_ccp_primitives(
     get_sock_from_ccp(sk, dp);
     ca = inet_csk_ca(sk);
 
-    return ca->mmt;
+    return &(ca->mmt);
 }
 
+void load_primitives( struct sock *sk, const struct rate_sample *rs) {
+    // load the primitive registers of the rate sample - convert all to u64
+    // raw values, not averaged
+    struct tcp_sock *tp = tcp_sk(sk);
+    struct ccp *ca = inet_csk_ca(sk);
+    u64 ack = (u64)(tp->snd_una);
+    u64 rtt = (u64)(rs->rtt_us);
+    u64 loss = (u64)(rs->losses);
+    u64 rin = 0; // send bandwidth in bytes per second
+    u64 rout = 0; // recv bandwidth in bytes per second
+
+    int measured_valid_rate = rate_sample_valid(rs);
+    pr_info("LOSS is %llu\n", loss);
+    if ( measured_valid_rate == 0 ) {
+       rin = rout  = (u64)rs->delivered * MTU * S_TO_US;
+       do_div(rin, rs->snd_int_us);
+       do_div(rout, rs->rcv_int_us);
+    } else {
+        return;
+    }
+    ca->mmt.ack = ack;
+    ca->mmt.rtt = rtt;
+    ca->mmt.loss = loss;
+    ca->mmt.rin = rin;
+    ca->mmt.rout = rout;
+    return;
+}
 void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     // aggregate measurement
     // state = fold(state, rs)
@@ -114,19 +143,13 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
 
     struct ccp *ca = inet_csk_ca(sk);
     struct ccp_connection *dp = ca->dp;
-    struct ccp_instruction_list* instr = ccp_instruction_list_lookup(ca->ccp_index);
 
     // load primitive registers
     load_primitives(sk, rs);
     // update the signal state
-    update_state_registers(ca);
+    //update_state_registers(ca);
 
 
-    pr_info("Prim ack: %llu, our ack: %llu\n", ca->mmt.ack, instr->state_registers[ACK]);
-    pr_info("Prim rtt: %llu, our rtt: %llu\n", ca->mmt.rtt, instr->state_registers[RTT]);
-    pr_info("Prim rin: %llu, our rin: %llu\n", ca->mmt.rin, instr->state_registers[RIN]);
-    pr_info("Prim rout: %llu, our rout: %llu\n", ca->mmt.rout, instr->state_registers[ROUT]);
-    pr_info("Prim loss: %llu, our loss : %llu\n", ca->mmt.loss, instr->state_registers[LOSS]); 
     
     ccp_invoke(dp);
 }
@@ -191,39 +214,29 @@ void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
     }
 
     cpl->last_drop_state = dtype;
-    nl_send_drop_notif(cpl->ccp_index, dtype);
+    send_drop_notif(cpl->dp, dtype);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
 
 void tcp_ccp_init(struct sock *sk) {
-    int ok;
-    void *impl;
-    struct tcp_sock *tp;
+    //void *impl; (unused ? )
+    struct tcp_sock *tp = tcp_sk(sk);
     struct ccp_connection *dp;
     struct ccp *cpl;
     //struct ccp_instruction_list *instr_list;
-    struct ccp_primitives init_mmt;
-
-    dp = {
-        .index = 0,
-
-        .set_cwnd = &do_set_cwnd,
-        .set_rate_abs = &do_set_rate_abs,
-        .set_rate_rel = &do_set_rate_rel,
-
-        .get_ccp_primitives = &get_ccp_primitives,
-
-        .send_msg = &nl_sendmsg,
-    };
-    
-    tp = tcp_sk(sk);
-    init_mmt = {
+    struct ccp_primitives init_mmt = {
         .ack = tp->snd_una,
         .rtt = 0,
         .loss = 0,
         .rin = 0,
         .rout = 0
     };
+
+    cpl->dp->index = 0;
+    cpl->dp->set_cwnd = &do_set_cwnd;
+    cpl->dp->set_rate_rel = &do_set_rate_rel;
+    cpl->dp->get_ccp_primitives = &get_ccp_primitives;
+    cpl->dp->send_msg = &nl_sendmsg; // TODO: where is the real IPC function
     
     cpl->last_drop_state = NO_DROP;
     memcpy(&(cpl->mmt), &init_mmt, sizeof(struct ccp_primitives));
@@ -235,7 +248,6 @@ void tcp_ccp_init(struct sock *sk) {
     cpl->dp = ccp_connection_start(dp);
     pr_info("ccp: starting connection %d", cpl->dp->index);
     pr_info("Size of ccp struct is %lu\n", sizeof(struct ccp));
-    //instr_list = ccp_instruction_list_lookup(cpl->ccp_index);
     //pr_info("Num instructions in thing is %d\n", instr_list->num_instructions);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_init);
@@ -243,7 +255,7 @@ EXPORT_SYMBOL_GPL(tcp_ccp_init);
 void tcp_ccp_release(struct sock *sk) {
     struct ccp *cpl = inet_csk_ca(sk);
     pr_info("ccp: freeing connection %d", cpl->dp->index);
-    ccp_connection_free(cpl->dp);
+    ccp_connection_free(cpl->dp->index);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_release);
 
