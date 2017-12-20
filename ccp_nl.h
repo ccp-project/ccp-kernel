@@ -6,7 +6,7 @@
 #ifndef CCP_NL_H
 #define CCP_NL_H
 
-typedef void (*ccp_nl_recv_handler)(char *msg, int msg_size);
+typedef int (*ccp_nl_recv_handler)(char *msg, int msg_size);
 
 /* Create a netlink kernel socket
  * A global (struct sock*), ccp_nl_sk, will get set so we can use the socket

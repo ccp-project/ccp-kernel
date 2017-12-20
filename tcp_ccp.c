@@ -1,7 +1,7 @@
 #include "tcp_ccp.h"
-#include "ccp_nl.h" // TODO: are you even supposed to include this here
+#include "ccp_nl.h"
 #include "libccp/ccp.h"
-#include "libccp/serialize.h"
+#include "drops.h"
 
 #include <linux/module.h>
 #include <net/tcp.h>
@@ -10,24 +10,12 @@
 #define CCP_EWMA_RECENCY 6
 
 void ccp_set_pacing_rate(struct sock *sk) {
-    // struct tcp_sock *tp = tcp_sk(sk); (unused?)
     struct ccp *ca = inet_csk_ca(sk);
-    // u64 segs_in_flight; /* desired cwnd as rate * rtt */ (unused?)
     sk->sk_pacing_rate = ca->rate;
     pr_info("ccp: Setting new rate %d Mbit/s (%d Bps)\n", ca->rate / 125000, ca->rate);
-
-    //if (likely(ca->mmt.rtt > 0)) {
-    //    segs_in_flight = (u64)ca->rate * ca->mmt.rtt;
-    //    do_div(segs_in_flight, MTU);
-    //    do_div(segs_in_flight, S_TO_US);
-    //    // Add few more segments to segs_to_flight to prevent rate underflow due to 
-    //    // temporary RTT fluctuations.
-    //    tp->snd_cwnd = segs_in_flight + 3;
-    //}
 }
 
-static int rate_sample_valid(const struct rate_sample *rs)
-{
+static int rate_sample_valid(const struct rate_sample *rs) {
   int ret = 0;
   if (rs->delivered <= 0)
     ret |= 1;
@@ -43,12 +31,10 @@ static int rate_sample_valid(const struct rate_sample *rs)
 }
 
 static void get_sock_from_ccp(
-    struct sock *sk,
+    struct sock **sk,
     struct ccp_connection *dp
 ) {
-    void *impl;
-    impl = ccp_get_impl(dp);
-    memcpy(sk, impl, sizeof(struct sock*));
+    *sk = (struct sock*) ccp_get_impl(dp);
 }
 
 static void do_set_cwnd(
@@ -57,7 +43,7 @@ static void do_set_cwnd(
 ) {
     struct sock *sk;
     struct tcp_sock *tp;
-    get_sock_from_ccp(sk, dp);
+    get_sock_from_ccp(&sk, dp);
     tp = tcp_sk(sk);
 
     // translate cwnd value back into packets
@@ -72,7 +58,7 @@ static void do_set_rate_abs(
 ) {
     struct sock *sk;
     struct ccp *ca;
-    get_sock_from_ccp(sk, dp);
+    get_sock_from_ccp(&sk, dp);
     ca = inet_csk_ca(sk);
 
     printk(KERN_INFO "rate (Bytes/s) -> %u\n", rate);
@@ -87,7 +73,7 @@ static void do_set_rate_rel(
     struct sock *sk;
     struct ccp *ca;
     uint64_t newrate;
-    get_sock_from_ccp(sk, dp);
+    get_sock_from_ccp(&sk, dp);
     ca = inet_csk_ca(sk);
 
     // factor is * 100
@@ -103,7 +89,7 @@ static struct ccp_primitives *get_ccp_primitives(
 ) {
     struct sock *sk;
     struct ccp *ca;
-    get_sock_from_ccp(sk, dp);
+    get_sock_from_ccp(&sk, dp);
     ca = inet_csk_ca(sk);
 
     return &(ca->mmt);
@@ -219,11 +205,9 @@ void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
 EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
 
 void tcp_ccp_init(struct sock *sk) {
-    //void *impl; (unused ? )
     struct tcp_sock *tp = tcp_sk(sk);
-    struct ccp_connection *dp;
+    struct ccp_connection dp;
     struct ccp *cpl;
-    //struct ccp_instruction_list *instr_list;
     struct ccp_primitives init_mmt = {
         .ack = tp->snd_una,
         .rtt = 0,
@@ -231,24 +215,25 @@ void tcp_ccp_init(struct sock *sk) {
         .rin = 0,
         .rout = 0
     };
+    
+    cpl = inet_csk_ca(sk);
 
-    cpl->dp->index = 0;
-    cpl->dp->set_cwnd = &do_set_cwnd;
-    cpl->dp->set_rate_rel = &do_set_rate_rel;
-    cpl->dp->get_ccp_primitives = &get_ccp_primitives;
-    cpl->dp->send_msg = &nl_sendmsg; // TODO: where is the real IPC function
+    dp.index = 0;
+    dp.set_cwnd = &do_set_cwnd;
+    dp.set_rate_rel = &do_set_rate_rel;
+    dp.set_rate_abs = &do_set_rate_abs;
+    dp.get_ccp_primitives = &get_ccp_primitives;
+    dp.send_msg = &nl_sendmsg;
     
     cpl->last_drop_state = NO_DROP;
     memcpy(&(cpl->mmt), &init_mmt, sizeof(struct ccp_primitives));
 
     // copy sk pointer into impl field of dp
-    ccp_set_impl(dp, (void*) sk, sizeof(sk));
+    ccp_set_impl(&dp, (void*) sk, sizeof(struct sock*));
 
-    cpl = inet_csk_ca(sk);
-    cpl->dp = ccp_connection_start(dp);
+    cpl->dp = ccp_connection_start(&dp);
     pr_info("ccp: starting connection %d", cpl->dp->index);
     pr_info("Size of ccp struct is %lu\n", sizeof(struct ccp));
-    //pr_info("Num instructions in thing is %d\n", instr_list->num_instructions);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_init);
 
@@ -289,11 +274,6 @@ static int __init tcp_ccp_register(void) {
     }
 
     printk(KERN_INFO "Init ccp\n");
-    //ok = ccp_init_fold_map();
-    //if (ok < 0) {
-    //    return -1;
-    //}
-    
     return tcp_register_congestion_control(&tcp_ccp_congestion_ops);
 }
 

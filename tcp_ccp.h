@@ -2,11 +2,21 @@
 #define TCP_CCP_H
 
 #include <linux/net.h>
-#include "libccp/common_headers.h"
+#include <linux/tcp.h>
+#include "libccp/ccp.h"
 /* -----------------------------------------------------------------------------
  * CCP TCP state
  * -----------------------------------------------------------------------------
  */
+
+/* Convenience type which DropMsg will map to drop event strings
+ */
+enum drop_type {
+    NO_DROP,
+    DROP_TIMEOUT,
+    DROP_DUPACK,
+    DROP_ECN
+};
 
 struct ccp {
     // control

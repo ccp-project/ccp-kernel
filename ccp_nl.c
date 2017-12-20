@@ -4,15 +4,24 @@
 
 #define CCP_MULTICAST_GROUP 22
 
-ccp_nl_recv_handler ccp_read_msg;
+ccp_nl_recv_handler ccp_msg_reader = NULL;
 struct sock *nl_sk;
 
 // callback from userspace ccp
 // all messages will be PatternMsg OR InstallFoldMsg
 // lookup ccp socket id, install new pattern
 void nl_recv(struct sk_buff *skb) {
+    int ok;
     struct nlmsghdr *nlh = nlmsg_hdr(skb);
-    ccp_read_msg((char*)nlmsg_data(nlh));
+    if (ccp_msg_reader == NULL) {
+        pr_info("ccp_msg_reader not ready\n");
+        return;
+    }
+
+    ok = ccp_msg_reader((char*)nlmsg_data(nlh), nlh->nlmsg_len);
+    if (ok < 0) {
+        pr_info("message read failed: %d.\n", ok);
+    }
 }
 
 int ccp_nl_sk(ccp_nl_recv_handler msg) {
@@ -20,7 +29,7 @@ int ccp_nl_sk(ccp_nl_recv_handler msg) {
         .input = nl_recv,
     };
 
-    ccp_read_msg = msg;
+    ccp_msg_reader = msg;
     nl_sk = netlink_kernel_create(&init_net, NETLINK_USERSOCK, &cfg);
     if (!nl_sk) {
         printk(KERN_ALERT "Error creating netlink socket.\n");
@@ -30,8 +39,12 @@ int ccp_nl_sk(ccp_nl_recv_handler msg) {
     return 0;
 }
 
+void free_ccp_nl_sk(void) {
+    netlink_kernel_release(nl_sk);
+}
+
 // send IPC message to userspace ccp
-static int nl_sendmsg(
+int nl_sendmsg(
     char *msg, 
     int msg_size
 ) {
@@ -64,7 +77,7 @@ static int nl_sendmsg(
     // reflect this."
     // Use an allocation without __GFP_DIRECT_RECLAIM
     res = nlmsg_multicast(
-        ccp_nl_sk,               // @sk: netlink socket to spread messages to
+        nl_sk,               // @sk: netlink socket to spread messages to
         skb_out,             // @skb: netlink message as socket buffer
         0,                   // @portid: own netlink portid to avoid sending to yourself
         CCP_MULTICAST_GROUP, // @group: multicast group id
