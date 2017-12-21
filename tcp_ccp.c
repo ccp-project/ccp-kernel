@@ -101,6 +101,7 @@ static struct ccp_primitives *get_ccp_primitives(
         ca->mmt.cwnd,
         ca->last_drop_state == NO_DROP
     );
+    pr_info("ccp: sk: %p, cpl: %p, mmt: %p", sk, ca, &ca->mmt);
 
     return &(ca->mmt);
 }
@@ -254,9 +255,11 @@ void tcp_ccp_init(struct sock *sk) {
         cpl->mmt.rout,
         cpl->mmt.cwnd
     );
+    pr_info("ccp: sk: %p, cpl: %p, mmt: %p", sk, cpl, &cpl->mmt);
 
     // copy sk pointer into impl field of dp
-    ccp_set_impl(&dp, (void*) sk, sizeof(struct sock*));
+    ccp_set_impl(&dp, (void*) sk);
+    pr_info("ccp: sk: %p, impl: %p", sk, (struct sock*) dp.impl);
 
     cpl->dp = ccp_connection_start(&dp);
     if (cpl->dp == NULL) {
