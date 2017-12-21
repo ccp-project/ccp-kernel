@@ -105,7 +105,7 @@ void load_primitives( struct sock *sk, const struct rate_sample *rs) {
     u64 loss = (u64)(rs->losses);
     u64 rin = 0; // send bandwidth in bytes per second
     u64 rout = 0; // recv bandwidth in bytes per second
-
+    u64 cwnd = tp->snd_cwnd;
     int measured_valid_rate = rate_sample_valid(rs);
     pr_info("LOSS is %llu\n", loss);
     if ( measured_valid_rate == 0 ) {
@@ -120,6 +120,7 @@ void load_primitives( struct sock *sk, const struct rate_sample *rs) {
     ca->mmt.loss = loss;
     ca->mmt.rin = rin;
     ca->mmt.rout = rout;
+    ca->mmt.cwnd = cwnd;
     return;
 }
 void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
