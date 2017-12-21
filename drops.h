@@ -52,7 +52,7 @@ int write_drop_msg(
     };
 
     if (bufsize < sizeof(struct CcpMsgHeader) + dropMsgLen) {
-        return -1;
+        return -2;
     }
 
     ok = serialize_header(buf, bufsize, &hdr);
@@ -62,12 +62,8 @@ int write_drop_msg(
 
     buf += ok;
     ret = ok;
-    if (bufsize < sizeof(msg)) {
-        return -2;
-    }
-
-    memcpy(buf, &msg, sizeof(msg));
-    return ret + sizeof(msg);
+    memcpy(buf, &msg, hdr.Len);
+    return hdr.Len;
 }
 
 

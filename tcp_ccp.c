@@ -91,17 +91,6 @@ static struct ccp_primitives *get_ccp_primitives(
     struct ccp *ca;
     get_sock_from_ccp(&sk, dp);
     ca = inet_csk_ca(sk);
-    pr_info(
-        "ccp: get_ccp_primitives: {ack: %llu, rtt: %llu, loss: %llu, rin: %llu, rout: %llu, cwnd: %llu} {%d}",
-        ca->mmt.ack,
-        ca->mmt.rtt,
-        ca->mmt.loss,
-        ca->mmt.rin,
-        ca->mmt.rout,
-        ca->mmt.cwnd,
-        ca->last_drop_state == NO_DROP
-    );
-    pr_info("ccp: sk: %p, cpl: %p, mmt: %p", sk, ca, &ca->mmt);
 
     return &(ca->mmt);
 }
@@ -149,13 +138,13 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     struct ccp_connection *dp = ca->dp;
 
     // load primitive registers
-    //load_primitives(sk, rs);
+    load_primitives(sk, rs);
     
     if (dp != NULL) {
         ccp_invoke(dp);
-    }// else {
-    //    pr_info("ccp: ccp_connection not initialized");
-    //}
+    } else {
+        pr_info("ccp: ccp_connection not initialized");
+    }
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_cong_control);
 
@@ -246,20 +235,9 @@ void tcp_ccp_init(struct sock *sk) {
     cpl = inet_csk_ca(sk);
     cpl->last_drop_state = NO_DROP;
     cpl->mmt = init_mmt;
-    pr_info(
-        "ccp: set primitives: {ack: %llu, rtt: %llu, loss: %llu, rin: %llu, rout: %llu, cwnd: %llu}",
-        cpl->mmt.ack,
-        cpl->mmt.rtt,
-        cpl->mmt.loss,
-        cpl->mmt.rin,
-        cpl->mmt.rout,
-        cpl->mmt.cwnd
-    );
-    pr_info("ccp: sk: %p, cpl: %p, mmt: %p", sk, cpl, &cpl->mmt);
 
     // copy sk pointer into impl field of dp
     ccp_set_impl(&dp, (void*) sk);
-    pr_info("ccp: sk: %p, impl: %p", sk, (struct sock*) dp.impl);
 
     cpl->dp = ccp_connection_start(&dp);
     if (cpl->dp == NULL) {

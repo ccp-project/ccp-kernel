@@ -17,6 +17,12 @@ void nl_recv(struct sk_buff *skb) {
         pr_info("ccp_msg_reader not ready\n");
         return;
     }
+    
+    //printk(KERN_INFO "[ ");
+    //for (i = 0; i < hdr->Len; i++) {
+    //    printk(KERN_INFO "%02x, ", (u32) buf[i]);
+    //}
+    //printk(KERN_INFO "]\n");
 
     ok = ccp_msg_reader((char*)nlmsg_data(nlh), nlh->nlmsg_len);
     if (ok < 0) {
@@ -51,6 +57,8 @@ int nl_sendmsg(
     int res;
     struct sk_buff *skb_out;
     struct nlmsghdr *nlh;
+
+    pr_info("ccp: sending nl message: (%d) type: %02x len: %02x sid: %04x", msg_size, *msg, *(msg + sizeof(u8)), *(msg + 2*sizeof(u8)));
 
     skb_out = nlmsg_new(
         msg_size,  // @payload: size of the message payload
