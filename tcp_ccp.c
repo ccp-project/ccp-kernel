@@ -123,20 +123,15 @@ void load_primitives( struct sock *sk, const struct rate_sample *rs) {
     ca->mmt.cwnd = cwnd;
     return;
 }
+
 void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     // aggregate measurement
     // state = fold(state, rs)
-    // TODO custom fold functions (for now, default only all fields)
-
     struct ccp *ca = inet_csk_ca(sk);
     struct ccp_connection *dp = ca->dp;
 
     // load primitive registers
     load_primitives(sk, rs);
-    // update the signal state
-    //update_state_registers(ca);
-
-
     
     ccp_invoke(dp);
 }
