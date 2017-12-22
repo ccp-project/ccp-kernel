@@ -100,7 +100,7 @@ static u32 ccp_now(void) {
 }
 
 static u32 ccp_after(u32 us) {
-    return tcp_time_stamp + us;
+    return tcp_time_stamp + usecs_to_jiffies(us);
 }
 
 void load_primitives( struct sock *sk, const struct rate_sample *rs) {
