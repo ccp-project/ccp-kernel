@@ -30,7 +30,7 @@ static int rate_sample_valid(const struct rate_sample *rs) {
   return ret;
 }
 
-static void get_sock_from_ccp(
+static inline void get_sock_from_ccp(
     struct sock **sk,
     struct ccp_connection *dp
 ) {
@@ -91,8 +91,26 @@ static struct ccp_primitives *get_ccp_primitives(
     struct ccp *ca;
     get_sock_from_ccp(&sk, dp);
     ca = inet_csk_ca(sk);
+    pr_info(
+        "ccp: get_ccp_primitives: {ack: %llu, rtt: %llu, loss: %llu, rin: %llu, rout: %llu, cwnd: %llu} {%d}",
+        ca->mmt.ack,
+        ca->mmt.rtt,
+        ca->mmt.loss,
+        ca->mmt.rin,
+        ca->mmt.rout,
+        ca->mmt.cwnd,
+        ca->last_drop_state == NO_DROP
+    );
 
     return &(ca->mmt);
+}
+
+static u32 ccp_now(void) {
+    return tcp_time_stamp;
+}
+
+static u32 ccp_after(u32 us) {
+    return tcp_time_stamp + us;
 }
 
 void load_primitives( struct sock *sk, const struct rate_sample *rs) {
@@ -107,7 +125,6 @@ void load_primitives( struct sock *sk, const struct rate_sample *rs) {
     u64 rout = 0; // recv bandwidth in bytes per second
     u64 cwnd = tp->snd_cwnd;
     int measured_valid_rate = rate_sample_valid(rs);
-    pr_info("LOSS is %llu\n", loss);
     if ( measured_valid_rate == 0 ) {
        rin = rout  = (u64)rs->delivered * MTU * S_TO_US;
        do_div(rin, rs->snd_int_us);
@@ -131,9 +148,13 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     struct ccp_connection *dp = ca->dp;
 
     // load primitive registers
-    load_primitives(sk, rs);
+    //load_primitives(sk, rs);
     
-    ccp_invoke(dp);
+    if (dp != NULL) {
+        ccp_invoke(dp);
+    }// else {
+    //    pr_info("ccp: ccp_connection not initialized");
+    //}
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_cong_control);
 
@@ -201,42 +222,59 @@ void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
 EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
 
 void tcp_ccp_init(struct sock *sk) {
-    struct tcp_sock *tp = tcp_sk(sk);
-    struct ccp_connection dp;
     struct ccp *cpl;
+    struct tcp_sock *tp = tcp_sk(sk);
     struct ccp_primitives init_mmt = {
         .ack = tp->snd_una,
         .rtt = 0,
         .loss = 0,
         .rin = 0,
-        .rout = 0
+        .rout = 0,
+        .cwnd = tp->snd_cwnd,
+    };
+    struct ccp_connection dp = {
+        .set_cwnd = &do_set_cwnd,
+        .set_rate_abs = &do_set_rate_abs,
+        .set_rate_rel = &do_set_rate_rel,
+        .get_ccp_primitives = &get_ccp_primitives,
+        .send_msg = &nl_sendmsg,
+        .now = &ccp_now,
+        .after_usecs = &ccp_after
     };
     
     cpl = inet_csk_ca(sk);
-
-    dp.index = 0;
-    dp.set_cwnd = &do_set_cwnd;
-    dp.set_rate_rel = &do_set_rate_rel;
-    dp.set_rate_abs = &do_set_rate_abs;
-    dp.get_ccp_primitives = &get_ccp_primitives;
-    dp.send_msg = &nl_sendmsg;
-    
     cpl->last_drop_state = NO_DROP;
-    memcpy(&(cpl->mmt), &init_mmt, sizeof(struct ccp_primitives));
+    cpl->mmt = init_mmt;
+    pr_info(
+        "ccp: set primitives: {ack: %llu, rtt: %llu, loss: %llu, rin: %llu, rout: %llu, cwnd: %llu}",
+        cpl->mmt.ack,
+        cpl->mmt.rtt,
+        cpl->mmt.loss,
+        cpl->mmt.rin,
+        cpl->mmt.rout,
+        cpl->mmt.cwnd
+    );
 
     // copy sk pointer into impl field of dp
     ccp_set_impl(&dp, (void*) sk, sizeof(struct sock*));
 
     cpl->dp = ccp_connection_start(&dp);
-    pr_info("ccp: starting connection %d", cpl->dp->index);
-    pr_info("Size of ccp struct is %lu\n", sizeof(struct ccp));
+    if (cpl->dp == NULL) {
+        pr_info("ccp: start connection failed\n");
+    } else {
+        pr_info("ccp: starting connection %d", cpl->dp->index);
+    }
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_init);
 
 void tcp_ccp_release(struct sock *sk) {
     struct ccp *cpl = inet_csk_ca(sk);
-    pr_info("ccp: freeing connection %d", cpl->dp->index);
-    ccp_connection_free(cpl->dp->index);
+    if (cpl->dp != NULL) {
+        pr_info("ccp: freeing connection %d", cpl->dp->index);
+        ccp_connection_free(cpl->dp->index);
+    } else {
+        pr_info("ccp: already freed");
+    }
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_release);
 
