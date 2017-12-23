@@ -58,7 +58,7 @@ int nl_sendmsg(
     struct sk_buff *skb_out;
     struct nlmsghdr *nlh;
 
-    pr_info("ccp: sending nl message: (%d) type: %02x len: %02x sid: %04x", msg_size, *msg, *(msg + sizeof(u8)), *(msg + 2*sizeof(u8)));
+    //pr_info("ccp: sending nl message: (%d) type: %02x len: %02x sid: %04x", msg_size, *msg, *(msg + sizeof(u8)), *(msg + 2*sizeof(u8)));
 
     skb_out = nlmsg_new(
         msg_size,  // @payload: size of the message payload

@@ -1,7 +1,7 @@
 #include "tcp_ccp.h"
 #include "ccp_nl.h"
 #include "libccp/ccp.h"
-#include "drops.h"
+//#include "drops.h"
 
 #include <linux/module.h>
 #include <net/tcp.h>
@@ -193,33 +193,25 @@ EXPORT_SYMBOL_GPL(tcp_ccp_pkts_acked);
  * TCP_CA_CWR -> got an ECN
  */
 void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
-    enum drop_type dtype;
     struct ccp *cpl = inet_csk_ca(sk);
+    struct tcp_sock *tp = tcp_sk(sk);
     switch (new_state) {
         case TCP_CA_Recovery:
             printk(KERN_INFO "entered TCP_CA_Recovery (dupack drop)\n");
-            dtype = DROP_DUPACK;
             break;
         case TCP_CA_Loss:
             printk(KERN_INFO "entered TCP_CA_Loss (timeout drop)\n");
-            dtype = DROP_TIMEOUT;
+            cpl->mmt.loss += tp->snd_cwnd; // the whole cwnd was lost
             break;
         case TCP_CA_CWR:
             printk(KERN_INFO "entered TCP_CA_CWR (ecn drop)\n");
-            dtype = DROP_ECN;
             break;
         default:
             printk(KERN_INFO "entered TCP normal state\n");
-            cpl->last_drop_state = NO_DROP;
             return;
     }
-
-    if (cpl->last_drop_state == dtype) {
-        return;
-    }
-
-    cpl->last_drop_state = dtype;
-    send_drop_notif(cpl->dp, dtype);
+    
+    //send_drop_notif(cpl->dp, dtype);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
 
@@ -246,7 +238,6 @@ void tcp_ccp_init(struct sock *sk) {
     };
     
     cpl = inet_csk_ca(sk);
-    cpl->last_drop_state = NO_DROP;
     cpl->mmt = init_mmt;
 
     // copy sk pointer into impl field of dp
