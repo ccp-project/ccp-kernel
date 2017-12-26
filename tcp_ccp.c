@@ -103,6 +103,18 @@ static u32 ccp_after(u32 us) {
     return tcp_time_stamp + usecs_to_jiffies(us);
 }
 
+// in dctcp code, in ack event used for ecn information per packet
+// TODO: possibly use this function for updating more primitives
+void tcp_ccp_in_ack_event(struct sock *sk, u32 flags) {
+    struct ccp *ca = inet_csk_ca(sk);
+    if (flags & CA_ACK_ECE) {
+        ca->mmt.ecn = true;
+    } else {
+        ca->mmt.ecn = false;
+    }
+}
+EXPORT_SYMBOL_GPL(tcp_ccp_in_ack_event);
+
 void load_primitives( struct sock *sk, const struct rate_sample *rs) {
     // load the primitive registers of the rate sample - convert all to u64
     // raw values, not averaged
@@ -221,6 +233,7 @@ void tcp_ccp_init(struct sock *sk) {
         .rin = 0,
         .rout = 0,
         .cwnd = tp->snd_cwnd,
+        .ecn = false,
     };
     struct ccp_connection dp = {
         .set_cwnd = &do_set_cwnd,
@@ -245,6 +258,11 @@ void tcp_ccp_init(struct sock *sk) {
     } else {
         pr_info("ccp: starting connection %d", cpl->dp->index);
     }
+
+    // if no ecn support
+    if (!(tp->ecn_flags & TCP_ECN_OK)) {
+        INET_ECN_dontxmit(sk);
+    }
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_init);
 
@@ -260,7 +278,8 @@ void tcp_ccp_release(struct sock *sk) {
 EXPORT_SYMBOL_GPL(tcp_ccp_release);
 
 struct tcp_congestion_ops tcp_ccp_congestion_ops = {
-    .flags = TCP_CONG_NON_RESTRICTED,
+    .flags = TCP_CONG_NEEDS_ECN,
+    .in_ack_event = tcp_ccp_in_ack_event,
     .name = "ccp",
     .owner = THIS_MODULE,
     .init = tcp_ccp_init,
@@ -270,7 +289,7 @@ struct tcp_congestion_ops tcp_ccp_congestion_ops = {
     .cong_control = tcp_ccp_cong_control,
     .undo_cwnd = tcp_ccp_undo_cwnd,
     .set_state = tcp_ccp_set_state,
-    .pkts_acked = tcp_ccp_pkts_acked,
+    .pkts_acked = tcp_ccp_pkts_acked
 };
 
 static int __init tcp_ccp_register(void) {
