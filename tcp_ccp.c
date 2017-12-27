@@ -134,11 +134,11 @@ void load_primitives( struct sock *sk, const struct rate_sample *rs) {
         return;
     }
     ca->mmt.ack = ack;
-    ca->mmt.rtt = rtt;
     ca->mmt.loss = loss;
-    ca->mmt.rin = rin;
-    ca->mmt.rout = rout;
-    ca->mmt.cwnd = cwnd;
+    ca->mmt.rcvrate = rout;
+    ca->mmt.rtt = rtt;
+    ca->mmt.sndcwnd = cwnd;
+    ca->mmt.sndrate = rin;
     return;
 }
 
@@ -219,12 +219,12 @@ void tcp_ccp_init(struct sock *sk) {
     struct tcp_sock *tp = tcp_sk(sk);
     struct ccp_primitives init_mmt = {
         .ack = tp->snd_una,
-        .rtt = 0,
-        .loss = 0,
-        .rin = 0,
-        .rout = 0,
-        .cwnd = tp->snd_cwnd,
         .ecn = false,
+        .loss = 0,
+        .rcvrate = 0,
+        .rtt = 0,
+        .sndcwnd = tp->snd_cwnd,
+        .sndrate = 0,
     };
     struct ccp_connection dp = {
         .set_cwnd = &do_set_cwnd,
