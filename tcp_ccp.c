@@ -1,7 +1,6 @@
 #include "tcp_ccp.h"
 #include "ccp_nl.h"
 #include "libccp/ccp.h"
-//#include "drops.h"
 
 #include <linux/module.h>
 #include <net/tcp.h>
