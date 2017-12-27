@@ -102,13 +102,17 @@ static u32 ccp_after(u32 us) {
 }
 
 // in dctcp code, in ack event used for ecn information per packet
-// TODO: possibly use this function for updating more primitives
 void tcp_ccp_in_ack_event(struct sock *sk, u32 flags) {
+    // according to tcp_input, in_ack_event is called before cong_control, so mmt.ack has old ack value
+    const struct tcp_sock *tp = tcp_sk(sk);
     struct ccp *ca = inet_csk_ca(sk);
-    if (flags & CA_ACK_ECE) {
-        ca->mmt.ecn = 1;
-    } else {
-        ca->mmt.ecn = 0;
+    u32 acked_bytes = tp->snd_una - (u32)ca->mmt.ack;
+    if ( acked_bytes) {
+        if (flags & CA_ACK_ECE) {
+            ca->mmt.ecn = (u64)acked_bytes;
+        } else {
+            ca->mmt.ecn = 0;
+        }
     }
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_in_ack_event);
