@@ -106,9 +106,9 @@ static u32 ccp_after(u32 us) {
 void tcp_ccp_in_ack_event(struct sock *sk, u32 flags) {
     struct ccp *ca = inet_csk_ca(sk);
     if (flags & CA_ACK_ECE) {
-        ca->mmt.ecn = true;
+        ca->mmt.ecn = 1;
     } else {
-        ca->mmt.ecn = false;
+        ca->mmt.ecn = 0;
     }
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_in_ack_event);
@@ -218,7 +218,7 @@ void tcp_ccp_init(struct sock *sk) {
     struct tcp_sock *tp = tcp_sk(sk);
     struct ccp_primitives init_mmt = {
         .ack = tp->snd_una,
-        .ecn = false,
+        .ecn = 0,
         .loss = 0,
         .mss = tp->mss_cache,
         .rcvrate = 0,
