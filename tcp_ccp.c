@@ -47,7 +47,6 @@ static void do_set_cwnd(
 
     // translate cwnd value back into packets
     cwnd /= tp->mss_cache;
-    printk(KERN_INFO "cwnd %d -> %d (mss %d)\n", tp->snd_cwnd, cwnd, tp->mss_cache);
     tp->snd_cwnd = cwnd;
 }
 
