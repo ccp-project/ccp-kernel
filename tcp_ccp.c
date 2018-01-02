@@ -226,7 +226,7 @@ void tcp_ccp_init(struct sock *sk) {
         .loss = 0,
         .mss = tp->mss_cache,
         .rcvrate = 0,
-        .rtt = 0,
+        .rtt = tp->srtt_us >> 3,
         .sndcwnd = tp->snd_cwnd,
         .sndrate = 0,
     };
