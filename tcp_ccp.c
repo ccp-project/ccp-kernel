@@ -58,8 +58,6 @@ static void do_set_rate_abs(
     struct ccp *ca;
     get_sock_from_ccp(&sk, dp);
     ca = inet_csk_ca(sk);
-
-    printk(KERN_INFO "rate (Bytes/s) -> %u\n", rate);
     ca->rate = rate;
     ccp_set_pacing_rate(sk);
 }
@@ -77,7 +75,6 @@ static void do_set_rate_rel(
     // factor is * 100
     newrate = ca->rate * factor;
     do_div(newrate, 100);
-    printk(KERN_INFO "rate -> %llu\n", newrate);
     ca->rate = (u32) newrate;
     ccp_set_pacing_rate(sk);
 }
