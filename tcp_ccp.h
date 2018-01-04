@@ -8,9 +8,10 @@
 struct ccp {
     // control
     u32 rate; // 4 B
+    u32 last_snd_una; // 4 B
 
     // measurement
-    struct ccp_primitives mmt; // 40 B
+    struct ccp_primitives mmt; // 65 B
 
     // communication
     struct ccp_connection *dp;
