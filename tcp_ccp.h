@@ -7,8 +7,9 @@
 
 struct ccp {
     // control
-    u32 rate; // 4 B
     u32 last_snd_una; // 4 B
+    u32 last_bytes_acked; // 4 B
+    u32 last_sacked_out; // 4 B
 
     // communication
     struct ccp_connection *dp;
@@ -17,6 +18,6 @@ struct ccp {
 #define MTU 1500
 #define S_TO_US 1000000
 
-void ccp_set_pacing_rate(struct sock *sk);
+void ccp_set_pacing_rate(struct sock *sk, uint32_t rate);
 
 #endif

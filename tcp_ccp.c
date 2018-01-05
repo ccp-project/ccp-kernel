@@ -8,10 +8,9 @@
 #define CCP_FRAC_DENOM 10
 #define CCP_EWMA_RECENCY 6
 
-void ccp_set_pacing_rate(struct sock *sk) {
-    struct ccp *ca = inet_csk_ca(sk);
-    sk->sk_pacing_rate = ca->rate;
-    pr_info("ccp: Setting new rate %d Mbit/s (%d Bps)\n", ca->rate / 125000, ca->rate);
+void ccp_set_pacing_rate(struct sock *sk, uint32_t rate) {
+    sk->sk_pacing_rate = rate;
+    pr_info("ccp: Setting new rate %d Mbit/s (%d Bps)\n", sk->sk_pacing_rate / 125000, sk->sk_pacing_rate);
 }
 
 static int rate_sample_valid(const struct rate_sample *rs) {
@@ -55,11 +54,8 @@ static void do_set_rate_abs(
     uint32_t rate
 ) {
     struct sock *sk;
-    struct ccp *ca;
     get_sock_from_ccp(&sk, dp);
-    ca = inet_csk_ca(sk);
-    ca->rate = rate;
-    ccp_set_pacing_rate(sk);
+    ccp_set_pacing_rate(sk, rate);
 }
 
 static void do_set_rate_rel(
@@ -67,16 +63,13 @@ static void do_set_rate_rel(
     uint32_t factor
 ) {
     struct sock *sk;
-    struct ccp *ca;
     uint64_t newrate;
     get_sock_from_ccp(&sk, dp);
-    ca = inet_csk_ca(sk);
 
     // factor is * 100
-    newrate = ca->rate * factor;
+    newrate = sk->sk_pacing_rate * factor;
     do_div(newrate, 100);
-    ca->rate = (u32) newrate;
-    ccp_set_pacing_rate(sk);
+    ccp_set_pacing_rate(sk, newrate);
 }
 
 static u32 ccp_now(void) {
@@ -133,10 +126,14 @@ void load_primitives(struct sock *sk, const struct rate_sample *rs) {
         return;
     }
 
-    mmt->bytes_acked = rs->acked_sacked * tp->mss_cache;
-    mmt->packets_acked = rs->acked_sacked;
-    mmt->bytes_misordered = 0;
-    mmt->packets_misordered = 0;
+    mmt->bytes_acked = tp->bytes_acked - ca->last_bytes_acked;
+    ca->last_bytes_acked = tp->bytes_acked;
+
+    mmt->packets_misordered = tp->sacked_out - ca->last_sacked_out;
+    ca->last_sacked_out = tp->sacked_out;
+
+    mmt->packets_acked = rs->acked_sacked - mmt->packets_misordered;
+    mmt->bytes_misordered = mmt->packets_misordered * tp->mss_cache;
     mmt->lost_pkts_sample = rs->losses;
     mmt->rtt_sample_us = rs->rtt_us;
     mmt->rate_outgoing = rin;
@@ -144,6 +141,7 @@ void load_primitives(struct sock *sk, const struct rate_sample *rs) {
     mmt->bytes_in_flight = tcp_packets_in_flight(tp) * tp->mss_cache;
     mmt->packets_in_flight = tcp_packets_in_flight(tp);
     mmt->snd_cwnd = tp->snd_cwnd * tp->mss_cache;
+    
     return;
 }
 
@@ -157,6 +155,7 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
         // load primitive registers
         load_primitives(sk, rs);
         ccp_invoke(dp);
+        ca->dp->prims.was_timeout = false;
     } else {
         pr_info("ccp: ccp_connection not initialized");
     }
@@ -198,25 +197,27 @@ EXPORT_SYMBOL_GPL(tcp_ccp_pkts_acked);
 void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
     struct ccp *cpl = inet_csk_ca(sk);
     switch (new_state) {
-        case TCP_CA_Recovery:
-            printk(KERN_INFO "entered TCP_CA_Recovery (dupack drop)\n");
-            break;
         case TCP_CA_Loss:
             printk(KERN_INFO "entered TCP_CA_Loss (timeout drop)\n");
             if (cpl->dp != NULL) {
                 cpl->dp->prims.was_timeout = true;
             }
 
+            return;
+        case TCP_CA_Recovery:
+            printk(KERN_INFO "entered TCP_CA_Recovery (dupack drop)\n");
             break;
         case TCP_CA_CWR:
             printk(KERN_INFO "entered TCP_CA_CWR (ecn drop)\n");
             break;
         default:
             printk(KERN_INFO "entered TCP normal state\n");
-            return;
+            break;
     }
-    
-    //send_drop_notif(cpl->dp, dtype);
+            
+    if (cpl->dp != NULL) {
+        cpl->dp->prims.was_timeout = false;
+    }
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
 
@@ -234,6 +235,8 @@ void tcp_ccp_init(struct sock *sk) {
     
     cpl = inet_csk_ca(sk);
     cpl->last_snd_una = tp->snd_una;
+    cpl->last_bytes_acked = tp->bytes_acked;
+    cpl->last_sacked_out = tp->sacked_out;
 
     // copy sk pointer into impl field of dp
     ccp_set_impl(&dp, (void*) sk);
@@ -295,7 +298,7 @@ static int __init tcp_ccp_register(void) {
         return -1;
     }
 
-    printk(KERN_INFO "Init ccp\n");
+    printk(KERN_INFO "Init ccp: %lu\n", sizeof(struct ccp));
     return tcp_register_congestion_control(&tcp_ccp_congestion_ops);
 }
 
