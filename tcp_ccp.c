@@ -79,17 +79,6 @@ static void do_set_rate_rel(
     ccp_set_pacing_rate(sk);
 }
 
-static struct ccp_primitives *get_ccp_primitives(
-    struct ccp_connection *dp
-) {
-    struct sock *sk;
-    struct ccp *ca;
-    get_sock_from_ccp(&sk, dp);
-    ca = inet_csk_ca(sk);
-
-    return &(ca->mmt);
-}
-
 static u32 ccp_now(void) {
     return tcp_jiffies32;
 }
@@ -103,25 +92,36 @@ void tcp_ccp_in_ack_event(struct sock *sk, u32 flags) {
     // according to tcp_input, in_ack_event is called before cong_control, so mmt.ack has old ack value
     const struct tcp_sock *tp = tcp_sk(sk);
     struct ccp *ca = inet_csk_ca(sk);
-    u32 acked_bytes = tp->snd_una - ca->last_snd_una;
+    struct ccp_primitives *mmt;
+    u32 acked_bytes;
+    if (ca->dp == NULL) {
+        pr_info("ccp: ccp_connection not initialized");
+        return;
+    }
+    
+    mmt = &ca->dp->prims;
+    acked_bytes = tp->snd_una - ca->last_snd_una;
     ca->last_snd_una = tp->snd_una;
     if (acked_bytes) {
         if (flags & CA_ACK_ECE) {
-            ca->mmt.ecn_bytes = (u64)acked_bytes;
-            ca->mmt.ecn_packets = (u64)acked_bytes / tp->mss_cache;
+            mmt->ecn_bytes = (u64)acked_bytes;
+            mmt->ecn_packets = (u64)acked_bytes / tp->mss_cache;
         } else {
-            ca->mmt.ecn_bytes = 0;
-            ca->mmt.ecn_packets = 0;
+            mmt->ecn_bytes = 0;
+            mmt->ecn_packets = 0;
         }
     }
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_in_ack_event);
 
-void load_primitives( struct sock *sk, const struct rate_sample *rs) {
-    // load the primitive registers of the rate sample - convert all to u64
-    // raw values, not averaged
+/* load the primitive registers of the rate sample - convert all to u64
+ * raw values, not averaged
+ */
+void load_primitives(struct sock *sk, const struct rate_sample *rs) {
     struct tcp_sock *tp = tcp_sk(sk);
     struct ccp *ca = inet_csk_ca(sk);
+    struct ccp_primitives *mmt = &ca->dp->prims;
+
     u64 rin = 0; // send bandwidth in bytes per second
     u64 rout = 0; // recv bandwidth in bytes per second
     int measured_valid_rate = rate_sample_valid(rs);
@@ -133,17 +133,17 @@ void load_primitives( struct sock *sk, const struct rate_sample *rs) {
         return;
     }
 
-    ca->mmt.bytes_acked = rs->acked_sacked * tp->mss_cache;
-    ca->mmt.packets_acked = rs->acked_sacked;
-    ca->mmt.bytes_misordered = tp->sacked_out * tp->mss_cache;
-    ca->mmt.packets_misordered = tp->sacked_out;
-    ca->mmt.lost_pkts_sample = rs->losses;
-    ca->mmt.rtt_sample_us = rs->rtt_us;
-    ca->mmt.rate_outgoing = rin;
-    ca->mmt.rate_incoming = rout;
-    ca->mmt.bytes_in_flight = tcp_packets_in_flight(tp) * tp->mss_cache;
-    ca->mmt.packets_in_flight = tcp_packets_in_flight(tp);
-    ca->mmt.snd_cwnd = tp->snd_cwnd * tp->mss_cache;
+    mmt->bytes_acked = rs->acked_sacked * tp->mss_cache;
+    mmt->packets_acked = rs->acked_sacked;
+    mmt->bytes_misordered = 0;
+    mmt->packets_misordered = 0;
+    mmt->lost_pkts_sample = rs->losses;
+    mmt->rtt_sample_us = rs->rtt_us;
+    mmt->rate_outgoing = rin;
+    mmt->rate_incoming = rout;
+    mmt->bytes_in_flight = tcp_packets_in_flight(tp) * tp->mss_cache;
+    mmt->packets_in_flight = tcp_packets_in_flight(tp);
+    mmt->snd_cwnd = tp->snd_cwnd * tp->mss_cache;
     return;
 }
 
@@ -153,10 +153,9 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     struct ccp *ca = inet_csk_ca(sk);
     struct ccp_connection *dp = ca->dp;
 
-    // load primitive registers
-    load_primitives(sk, rs);
-    
     if (dp != NULL) {
+        // load primitive registers
+        load_primitives(sk, rs);
         ccp_invoke(dp);
     } else {
         pr_info("ccp: ccp_connection not initialized");
@@ -204,7 +203,10 @@ void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
             break;
         case TCP_CA_Loss:
             printk(KERN_INFO "entered TCP_CA_Loss (timeout drop)\n");
-            cpl->mmt.was_timeout = true;
+            if (cpl->dp != NULL) {
+                cpl->dp->prims.was_timeout = true;
+            }
+
             break;
         case TCP_CA_CWR:
             printk(KERN_INFO "entered TCP_CA_CWR (ecn drop)\n");
@@ -221,32 +223,17 @@ EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
 void tcp_ccp_init(struct sock *sk) {
     struct ccp *cpl;
     struct tcp_sock *tp = tcp_sk(sk);
-    struct ccp_primitives init_mmt = {
-        .bytes_acked = 0,
-        .packets_acked = 0,
-        .bytes_misordered = 0,
-        .packets_misordered = 0,
-        .ecn_bytes = 0,
-        .ecn_packets = 0,
-        .lost_pkts_sample = 0,
-        .was_timeout = false,
-        .rtt_sample_us = tp->srtt_us >> 3,
-        .bytes_in_flight = 0,
-        .packets_in_flight = 0,
-        .snd_cwnd = tp->snd_cwnd * tp->mss_cache,
-    };
     struct ccp_connection dp = {
         .set_cwnd = &do_set_cwnd,
         .set_rate_abs = &do_set_rate_abs,
         .set_rate_rel = &do_set_rate_rel,
-        .get_ccp_primitives = &get_ccp_primitives,
         .send_msg = &nl_sendmsg,
         .now = &ccp_now,
         .after_usecs = &ccp_after
     };
     
     cpl = inet_csk_ca(sk);
-    cpl->mmt = init_mmt;
+    cpl->last_snd_una = tp->snd_una;
 
     // copy sk pointer into impl field of dp
     ccp_set_impl(&dp, (void*) sk);
