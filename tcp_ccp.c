@@ -254,6 +254,8 @@ void tcp_ccp_init(struct sock *sk) {
     if (!(tp->ecn_flags & TCP_ECN_OK)) {
         INET_ECN_dontxmit(sk);
     }
+    
+    cmpxchg(&sk->sk_pacing_status, SK_PACING_NONE, SK_PACING_NEEDED);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_init);
 
