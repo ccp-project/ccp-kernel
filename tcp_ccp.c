@@ -91,11 +91,11 @@ static struct ccp_primitives *get_ccp_primitives(
 }
 
 static u32 ccp_now(void) {
-    return tcp_time_stamp;
+    return tcp_jiffies32;
 }
 
 static u32 ccp_after(u32 us) {
-    return tcp_time_stamp + usecs_to_jiffies(us);
+    return tcp_jiffies32 + usecs_to_jiffies(us);
 }
 
 // in dctcp code, in ack event used for ecn information per packet
