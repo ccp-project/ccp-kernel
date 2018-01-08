@@ -58,7 +58,7 @@ static void doWaitAbs(
 ) {
     struct ccp *cpl = inet_csk_ca(sk);
     pr_info("waiting %u us\n", wait_us);
-    cpl->next_event_time = tcp_time_stamp + usecs_to_jiffies(wait_us);
+    cpl->next_event_time = tcp_jiffies32 + usecs_to_jiffies(wait_us);
 }
 
 static void doWaitRel(
@@ -70,7 +70,7 @@ static void doWaitRel(
     u64 wait_us = rtt_factor * rtt_us;
     do_div(wait_us, 100);
     pr_info("waiting %llu us (%u/100 rtts) (rtt = %llu us)\n", wait_us, rtt_factor, rtt_us);
-    cpl->next_event_time = tcp_time_stamp + usecs_to_jiffies(wait_us);
+    cpl->next_event_time = tcp_jiffies32 + usecs_to_jiffies(wait_us);
 }
 
 void sendStateMachine(struct sock *sk) {
@@ -90,7 +90,7 @@ void sendStateMachine(struct sock *sk) {
         return;
     }
 
-    if (unlikely(after(tcp_time_stamp, cpl->next_event_time))) {
+    if (unlikely(after(tcp_jiffies32, cpl->next_event_time))) {
         cpl->currPatternEvent = (cpl->currPatternEvent + 1) % cpl->numPatternEvents;
         pr_info("curr pattern event: %d\n", cpl->currPatternEvent);
     } else {
@@ -160,7 +160,7 @@ void installPattern(
 
     ca->numPatternEvents = numEvents;
     ca->currPatternEvent = numEvents - 1;
-    ca->next_event_time = tcp_time_stamp;
+    ca->next_event_time = tcp_jiffies32;
     ca->pattern = seq;
 
     sendStateMachine(sk);

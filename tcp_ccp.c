@@ -176,12 +176,14 @@ void tcp_ccp_init(struct sock *sk) {
     cpl->ccp_index = ccp_connection_start(sk);
     pr_info("ccp: starting connection %d", cpl->ccp_index);
     
-    cpl->next_event_time = tcp_time_stamp;
+    cpl->next_event_time = tcp_jiffies32;
     cpl->currPatternEvent = 0;
     cpl->numPatternEvents = 0;
     cpl->last_drop_state = NO_DROP;
     cpl->num_loss = 0;
     memcpy(&(cpl->mmt), &init_mmt, sizeof(struct ccp_measurement));
+
+	cmpxchg(&sk->sk_pacing_status, SK_PACING_NONE, SK_PACING_NEEDED);
 
     // send to CCP:
     // index of pointer back to this sock for IPC callback
