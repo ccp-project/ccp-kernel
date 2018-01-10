@@ -46,9 +46,6 @@ static void doReport(
     pr_info("sending report\n");
     nl_send_measurement(cpl->ccp_index, mmt);
 
-    cpl->mmt.rtt = 0;
-    cpl->mmt.rin = 0;
-    cpl->mmt.rout = 0;
     cpl->mmt.loss = 0;
 }
 

@@ -211,7 +211,9 @@ struct ccp {
 
     // measurement
     struct ccp_measurement mmt;
-
+	u64 prev_rin;
+	u64 prev_rout;
+	u32 prev_mmt_time;
     // communication
     uint16_t ccp_index;
 };

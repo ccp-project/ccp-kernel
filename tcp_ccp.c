@@ -1,6 +1,5 @@
 #include <linux/module.h>
 #include <net/tcp.h>
-
 #include "tcp_ccp.h"
 
 #define CCP_FRAC_DENOM 10
@@ -70,18 +69,28 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
         return;
     }
 
-    //pr_info("new measurement: ack %u, rtt %u, rin %llu, rout %llu\n", 
+	u32 curr_time = tcp_jiffies32;
+
+	if (curr_time>ca->prev_mmt_time) {
+		ca->mmt.rin = ewma(ca->mmt.rin, ca->prev_rin);
+		ca->mmt.rout = ewma(ca->mmt.rout, ca->prev_rout);
+	}
+	ca->prev_mmt_time = curr_time;
+	
+	//pr_info("new measurement: ack %u, rtt %u, rin %llu, rout %llu, time %u\n", 
     //        curr_mmt.ack,
-    //        curr_mmt.rtt,
-    //        curr_mmt.rin,
-    //        curr_mmt.rout
-    //);
+    //       curr_mmt.rtt,
+    //       curr_mmt.rin,
+    //       curr_mmt.rout,
+	//		curr_time
+	//);
+	
 
     ca->mmt.ack = curr_mmt.ack; // max()
     ca->mmt.rtt = ewma(ca->mmt.rtt, curr_mmt.rtt);
-    ca->mmt.rin = ewma(ca->mmt.rin, curr_mmt.rin);
-    ca->mmt.rout = ewma(ca->mmt.rout, curr_mmt.rout);
-    ca->mmt.loss = curr_mmt.loss;
+	ca->mmt.loss = curr_mmt.loss;
+   	ca->prev_rin = curr_mmt.rin;
+    ca->prev_rout = curr_mmt.rout;
     
     //pr_info("curr measurement: ack %u, rtt %u, rin %llu, rout %llu\n", 
     //        ca->mmt.ack,
@@ -181,8 +190,10 @@ void tcp_ccp_init(struct sock *sk) {
     cpl->numPatternEvents = 0;
     cpl->last_drop_state = NO_DROP;
     cpl->num_loss = 0;
-    memcpy(&(cpl->mmt), &init_mmt, sizeof(struct ccp_measurement));
-
+   	cpl->prev_mmt_time = 0; 
+	cpl->prev_rin = 0;
+	cpl->prev_rout = 0;
+	memcpy(&(cpl->mmt), &init_mmt, sizeof(struct ccp_measurement));
 	cmpxchg(&sk->sk_pacing_status, SK_PACING_NONE, SK_PACING_NEEDED);
 
     // send to CCP:
