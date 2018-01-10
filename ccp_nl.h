@@ -6,6 +6,8 @@
 #ifndef CCP_NL_H
 #define CCP_NL_H
 
+#include "libccp/ccp.h"
+
 typedef int (*ccp_nl_recv_handler)(char *msg, int msg_size);
 
 /* Create a netlink kernel socket
@@ -21,6 +23,7 @@ void free_ccp_nl_sk(void);
 /* Send serialized message to userspace CCP
  */
 int nl_sendmsg(
+    struct ccp_connection *ccp,
     char *msg, 
     int msg_size
 );

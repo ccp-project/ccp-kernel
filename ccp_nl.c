@@ -1,6 +1,5 @@
 #include <net/tcp.h>
 #include "ccp_nl.h"
-#include "libccp/ccp.h"
 
 #define CCP_MULTICAST_GROUP 22
 
@@ -51,6 +50,7 @@ void free_ccp_nl_sk(void) {
 
 // send IPC message to userspace ccp
 int nl_sendmsg(
+    struct ccp_connection *ccp,
     char *msg, 
     int msg_size
 ) {
