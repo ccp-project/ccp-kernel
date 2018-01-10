@@ -130,6 +130,12 @@ void load_primitives(struct sock *sk, const struct rate_sample *rs) {
     ca->last_bytes_acked = tp->bytes_acked;
 
     mmt->packets_misordered = tp->sacked_out - ca->last_sacked_out;
+    if (tp->sacked_out < ca->last_sacked_out) {
+        mmt->packets_misordered = 0;
+    } else {
+        mmt->packets_misordered = tp->sacked_out - ca->last_sacked_out;
+    }
+
     ca->last_sacked_out = tp->sacked_out;
 
     mmt->packets_acked = rs->acked_sacked - mmt->packets_misordered;
@@ -141,7 +147,7 @@ void load_primitives(struct sock *sk, const struct rate_sample *rs) {
     mmt->bytes_in_flight = tcp_packets_in_flight(tp) * tp->mss_cache;
     mmt->packets_in_flight = tcp_packets_in_flight(tp);
     mmt->snd_cwnd = tp->snd_cwnd * tp->mss_cache;
-    
+
     return;
 }
 
