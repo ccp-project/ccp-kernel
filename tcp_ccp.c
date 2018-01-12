@@ -233,13 +233,22 @@ EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
 void tcp_ccp_init(struct sock *sk) {
     struct ccp *cpl;
     struct tcp_sock *tp = tcp_sk(sk);
+    struct ccp_datapath_info dp = {
+        .init_cwnd = tp->snd_cwnd * tp->mss_cache,
+        .mss = tp->mss_cache,
+        .src_ip = tp->inet_conn.icsk_inet.inet_rcv_saddr,
+        .src_port = tp->inet_conn.icsk_inet.inet_num,
+        .dst_ip = tp->inet_conn.icsk_inet.inet_saddr,
+        .dst_port = tp->inet_conn.icsk_inet.inet_dport,
+        .congAlg = "reno",
+    };
     
     cpl = inet_csk_ca(sk);
     cpl->last_snd_una = tp->snd_una;
     cpl->last_bytes_acked = tp->bytes_acked;
     cpl->last_sacked_out = tp->sacked_out;
 
-    cpl->dp = ccp_connection_start((void *) sk);
+    cpl->dp = ccp_connection_start((void *) sk, &dp);
     if (cpl->dp == NULL) {
         pr_info("ccp: start connection failed\n");
     } else {
