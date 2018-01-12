@@ -23,7 +23,8 @@ void free_ccp_nl_sk(void);
 /* Send serialized message to userspace CCP
  */
 int nl_sendmsg(
-    struct ccp_connection *ccp,
+    struct ccp_datapath *dp,
+    struct ccp_connection *conn,
     char *msg, 
     int msg_size
 );

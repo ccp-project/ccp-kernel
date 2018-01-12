@@ -30,18 +30,19 @@ static int rate_sample_valid(const struct rate_sample *rs) {
 
 static inline void get_sock_from_ccp(
     struct sock **sk,
-    struct ccp_connection *dp
+    struct ccp_connection *conn
 ) {
-    *sk = (struct sock*) ccp_get_impl(dp);
+    *sk = (struct sock*) ccp_get_impl(conn);
 }
 
 static void do_set_cwnd(
-    struct ccp_connection *dp, 
+    struct ccp_datapath *dp,
+    struct ccp_connection *conn, 
     uint32_t cwnd
 ) {
     struct sock *sk;
     struct tcp_sock *tp;
-    get_sock_from_ccp(&sk, dp);
+    get_sock_from_ccp(&sk, conn);
     tp = tcp_sk(sk);
 
     // translate cwnd value back into packets
@@ -50,21 +51,23 @@ static void do_set_cwnd(
 }
 
 static void do_set_rate_abs(
-    struct ccp_connection *dp, 
+    struct ccp_datapath *dp,
+    struct ccp_connection *conn, 
     uint32_t rate
 ) {
     struct sock *sk;
-    get_sock_from_ccp(&sk, dp);
+    get_sock_from_ccp(&sk, conn);
     ccp_set_pacing_rate(sk, rate);
 }
 
 static void do_set_rate_rel(
-    struct ccp_connection *dp, 
+    struct ccp_datapath *dp,
+    struct ccp_connection *conn, 
     uint32_t factor
 ) {
     struct sock *sk;
     uint64_t newrate;
-    get_sock_from_ccp(&sk, dp);
+    get_sock_from_ccp(&sk, conn);
 
     // factor is * 100
     newrate = sk->sk_pacing_rate * factor;
@@ -230,24 +233,13 @@ EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
 void tcp_ccp_init(struct sock *sk) {
     struct ccp *cpl;
     struct tcp_sock *tp = tcp_sk(sk);
-    struct ccp_connection dp = {
-        .set_cwnd = &do_set_cwnd,
-        .set_rate_abs = &do_set_rate_abs,
-        .set_rate_rel = &do_set_rate_rel,
-        .send_msg = &nl_sendmsg,
-        .now = &ccp_now,
-        .after_usecs = &ccp_after
-    };
     
     cpl = inet_csk_ca(sk);
     cpl->last_snd_una = tp->snd_una;
     cpl->last_bytes_acked = tp->bytes_acked;
     cpl->last_sacked_out = tp->sacked_out;
 
-    // copy sk pointer into impl field of dp
-    ccp_set_impl(&dp, (void*) sk);
-
-    cpl->dp = ccp_connection_start(&dp);
+    cpl->dp = ccp_connection_start((void *) sk);
     if (cpl->dp == NULL) {
         pr_info("ccp: start connection failed\n");
     } else {
@@ -291,6 +283,14 @@ struct tcp_congestion_ops tcp_ccp_congestion_ops = {
 
 static int __init tcp_ccp_register(void) {
     int ok;
+    struct ccp_datapath dp = {
+        .set_cwnd = &do_set_cwnd,
+        .set_rate_abs = &do_set_rate_abs,
+        .set_rate_rel = &do_set_rate_rel,
+        .send_msg = &nl_sendmsg,
+        .now = &ccp_now,
+        .after_usecs = &ccp_after
+    };
 
     ok = ccp_nl_sk(&ccp_read_msg); // TODO
     if (ok < 0) {
@@ -299,7 +299,7 @@ static int __init tcp_ccp_register(void) {
 
     printk(KERN_INFO "init NL\n");
 
-    ok = ccp_init_connection_map();
+    ok = ccp_init(&dp);
     if (ok < 0) {
         return -1;
     }
@@ -310,7 +310,7 @@ static int __init tcp_ccp_register(void) {
 
 static void __exit tcp_ccp_unregister(void) {
     printk(KERN_INFO "Exit ccp\n");
-    ccp_free_connection_map();
+    ccp_free();
     free_ccp_nl_sk();
     tcp_unregister_congestion_control(&tcp_ccp_congestion_ops);
 }
