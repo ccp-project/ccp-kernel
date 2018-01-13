@@ -79,6 +79,10 @@ static u32 ccp_now(void) {
     return tcp_jiffies32;
 }
 
+static u32 ccp_since(u32 then) {
+    return jiffies_to_usecs(tcp_jiffies32 - then);
+}
+
 static u32 ccp_after(u32 us) {
     return tcp_jiffies32 + usecs_to_jiffies(us);
 }
@@ -298,6 +302,7 @@ static int __init tcp_ccp_register(void) {
         .set_rate_rel = &do_set_rate_rel,
         .send_msg = &nl_sendmsg,
         .now = &ccp_now,
+        .since_usecs = &ccp_since,
         .after_usecs = &ccp_after
     };
 
