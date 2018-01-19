@@ -29,6 +29,15 @@
 struct ccpkp_dev *ccpkp_dev;
 int ccpkp_major;
 
+// NOTE: hack for now since there's only one ccp.
+//       if we want to support multiple ccps, datapath
+//       will need a way to differentiate between them
+int curr_ccp_id; 
+
+ccp_recv_handler libccp_read_msg;
+#define RECVBUF_LEN 4096
+char recvbuf[RECVBUF_LEN];
+
 static struct file_operations ccpkp_fops = 
 {
 	.owner    = THIS_MODULE,
@@ -38,10 +47,12 @@ static struct file_operations ccpkp_fops =
 	.release	= ccpkp_user_release
 };
 
-int ccpkp_init(void) {
+int ccpkp_init(ccp_recv_handler handler) {
 	int result, err;
 	int devno;
 	dev_t dev = 0;
+
+	libccp_read_msg = handler;
 
 	result = alloc_chrdev_region(&dev, 0, 1, DEV_NAME);
 	ccpkp_major = MAJOR(dev);
@@ -173,12 +184,22 @@ ssize_t ccpkp_user_read(struct file *fp, char *buf, size_t bytes_to_read, loff_t
 #else
 	struct ringbuf *q = &(pipe->uq);
 #endif
+        PDEBUG("user wants to read %lu bytes", bytes_to_read);
 	return kp_read(pipe, q, buf, bytes_to_read, true);
+}
+
+void ccpkp_try_read(void) {
+	ssize_t bytes_read;
+	bytes_read = ccpkp_kernel_read(ccpkp_dev->pipes[curr_ccp_id], recvbuf, RECVBUF_LEN);
+	if (bytes_read > 0) {
+		libccp_read_msg(recvbuf, bytes_read);
+	}
 }
 
 // module stores pointer to corresponding ccp kpipe for each socket
 ssize_t ccpkp_kernel_read(struct kpipe *pipe, char *buf, size_t bytes_to_read) {
 	struct ringbuf *q = &(pipe->kq);
+        PDEBUG("kernel wants to read %lu bytes", bytes_to_read);
 	return kp_read(pipe, q, buf, bytes_to_read, false);
 }
 
@@ -189,7 +210,7 @@ ssize_t kp_read(struct kpipe *pipe, struct ringbuf *q, char *buf, size_t bytes_t
 	char *safe_wp = q->buf + q->wp;
 
 
-	PDEBUG("READ_START: rp=%p wp=%p, bytes_to_read=%lu\n", q->rp, safe_wp, bytes_to_read);
+	//PDEBUG("READ_START: rp=%p wp=%p, bytes_to_read=%lu\n", q->rp, safe_wp, bytes_to_read);
 
 	// Kernel doesn't wait if pipe is empty
 	if (!user_buf && (safe_wp == q->rp)) {
@@ -202,6 +223,7 @@ ssize_t kp_read(struct kpipe *pipe, struct ringbuf *q, char *buf, size_t bytes_t
 			return -ERESTARTSYS;
 		}
 	}
+	PDEBUG("READ_START: rp=%p wp=%p, bytes_to_read=%lu\n", q->rp, safe_wp, bytes_to_read);
 	// Copy of write pointer at this time 
 	// Can't keep accessing q->wp because writer might be writing now
 	safe_wp = q->buf + q->wp;
@@ -257,7 +279,6 @@ ssize_t kp_read(struct kpipe *pipe, struct ringbuf *q, char *buf, size_t bytes_t
 		}
 	}
 
-	PDEBUG("user read %li bytes\n", (long) bytes_read);
 	PDEBUG("READ_END: rp=%p wp=%p\n", q->rp, q->buf+q->wp);
 	return bytes_read;
 }
@@ -265,6 +286,7 @@ ssize_t kp_read(struct kpipe *pipe, struct ringbuf *q, char *buf, size_t bytes_t
 ssize_t ccpkp_user_write(struct file *fp, const char *buf, size_t bytes_to_write, loff_t *offset) {
 	struct kpipe *pipe = fp->private_data;
 	struct ringbuf *q = &(pipe->kq);
+        PDEBUG("user wants to write %lu bytes", bytes_to_write);
 #ifdef MULTI
 	return kp_write_multi(pipe, q, buf, bytes_to_write, true);
 #else
@@ -272,9 +294,22 @@ ssize_t ccpkp_user_write(struct file *fp, const char *buf, size_t bytes_to_write
 #endif
 }
 
+int ccpkp_sendmsg(
+		struct ccp_datapath *dp,
+		struct ccp_connection *conn,
+		char *buf,
+		int bytes_to_write
+) {
+	if (bytes_to_write < 0) {
+		return -1;
+	}
+	return ccpkp_kernel_write(ccpkp_dev->pipes[curr_ccp_id], buf, (size_t) bytes_to_write);
+}
+
 // module stores pointer to corresponding ccp kpipe for each socket
 ssize_t ccpkp_kernel_write(struct kpipe *pipe, const char *buf, size_t bytes_to_write) {
 	struct ringbuf *q = &(pipe->uq);
+        PDEBUG("kernel wants to write %lu bytes", bytes_to_write);
 #ifdef MULTI
 	return kp_write_multi(pipe, q, buf, bytes_to_write, false);
 #else
@@ -292,7 +327,7 @@ ssize_t kp_write_multi(struct kpipe *pipe, struct ringbuf *q, const char *buf, s
 	int old_wp, new_wp;
 	int old_cs, old_cb, old_ce;
 
-	PDEBUG("write start");
+	//PDEBUG("write start");
 	
 	// Reserve chunk of ringbuffer (old_wp_tmp, new_wp_tmp) 
 	// by atomically incrementing wp_tmp
@@ -305,7 +340,7 @@ ssize_t kp_write_multi(struct kpipe *pipe, struct ringbuf *q, const char *buf, s
 			return -EAGAIN;
 		}
 	} while (cmpxchg(&(q->wp_tmp), old_wp_tmp, new_wp_tmp) != old_wp_tmp);
-	PDEBUG("acquired chunk [%d, %d]", old_wp_tmp, new_wp_tmp);
+	//PDEBUG("acquired chunk [%d, %d]", old_wp_tmp, new_wp_tmp);
 
 	safe_wp = q->buf + old_wp_tmp;
 
@@ -316,15 +351,15 @@ ssize_t kp_write_multi(struct kpipe *pipe, struct ringbuf *q, const char *buf, s
 	} else {
 		bytes_wrote = min(bytes_to_write, (size_t)(safe_rp - safe_wp - 1));
 	}
-	PDEBUG("going to write %li bytes\n", (long)bytes_wrote);
+	//PDEBUG("going to write %li bytes\n", (long)bytes_wrote);
 	if (copy_from_user(safe_wp, buf, bytes_wrote)) {
 		return -EFAULT;
 	}
+        //PDEBUG("wrote %li bytes\n", (long)bytes_wrote);
 	safe_wp += bytes_wrote;
 	if (safe_wp == q->end) {
 		safe_wp = q->buf;
 	}
-	//wake_up_interruptible(&q->nonempty);
 	if (safe_wp == q->buf) { 
 		if (bytes_wrote < bytes_to_write) {
 			safe_rp = q->rp;
@@ -339,6 +374,9 @@ ssize_t kp_write_multi(struct kpipe *pipe, struct ringbuf *q, const char *buf, s
 			}
 		}
 	}
+        if (!user_buf) {  // TODO indirect, might be better if q object had blocking field
+            wake_up_interruptible(&q->nonempty);
+        }
 
 	// Make sure we used exactly the amount of space we reserved
 	WARN_ON(safe_wp != (q->buf + new_wp_tmp));
@@ -379,7 +417,7 @@ ssize_t kp_write_multi(struct kpipe *pipe, struct ringbuf *q, const char *buf, s
 
 	PDEBUG("shifted wp from %d to %d", old_wp, new_wp);
 	
-	PDEBUG("write end");
+	//PDEBUG("write end");
 	return bytes_wrote;
 }
 

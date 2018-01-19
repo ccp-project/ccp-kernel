@@ -1,6 +1,6 @@
 # Comment/uncomment the following line to disable/enable debugging
 DEBUG = y
-ONE_PIPE = y
+ONE_PIPE = n
 MULTI = y
 
 # Add your debugging flag (or not) to EXTRA_CFLAGS

@@ -3,6 +3,7 @@
 
 #include <linux/slab.h>
 #include <linux/cdev.h>
+#include "../libccp/ccp.h"
 
 #undef PDEBUG             /* undef it, just in case */
 #ifdef DEBUG_MODE
@@ -18,7 +19,7 @@
 #endif
 
 #ifndef PER_Q_BSIZE
-#define PER_Q_BSIZE 4000
+#define PER_Q_BSIZE 400000
 #endif
 
 #ifndef MAX_CCPS
@@ -27,12 +28,15 @@
 
 #define BIGGEST_MSG_SIZE 256
 
+typedef int (*ccp_recv_handler)(char *msg, int msg_size);
+
 struct ringbuf {
 	wait_queue_head_t nonempty;
 	char *buf, *end;
 	char *rp;
 	int wp,
 			wp_tmp;
+	// TODO add last_wp to handle case where recvbuf isn't big enough
 
 	int chunk_begin,
 			chunk_size,
@@ -72,12 +76,14 @@ struct ccpkp_dev {
 	struct mutex mux;
 };
 
-int         ccpkp_init(void);
+int         ccpkp_init(ccp_recv_handler handler);
 int		 	    ccpkp_user_open(struct inode *, struct file *);
 ssize_t			ccpkp_user_read(struct file *fp, char *buf, size_t bytes_to_read, loff_t *offset);
+void        ccpkp_try_read(void);
 ssize_t			ccpkp_kernel_read(struct kpipe *pipe, char *buf, size_t bytes_to_read);
 ssize_t			kp_read(struct kpipe *pipe, struct ringbuf *q, char *buf, size_t bytes_to_read, bool user_buf);
 ssize_t			ccpkp_user_write(struct file *fp, const char *buf, size_t bytes_to_write, loff_t *offset);
+int         ccpkp_sendmsg(struct ccp_datapath *dp, struct ccp_connection *conn, char *buf, int bytes_to_write);
 ssize_t			ccpkp_kernel_write(struct kpipe *pipe, const char *buf, size_t bytes_to_read);
 ssize_t			kp_write_multi(struct kpipe *pipe, struct ringbuf *q, const char *buf, size_t bytes_to_write, bool user_buf);
 ssize_t			kp_write_single(struct kpipe *pipe, struct ringbuf *q, const char *buf, size_t bytes_to_write, bool user_buf);

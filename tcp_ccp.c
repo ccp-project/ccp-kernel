@@ -11,6 +11,13 @@
 #define CCP_FRAC_DENOM 10
 #define CCP_EWMA_RECENCY 6
 
+#define IPC_NETLINK 0
+#define IPC_CHARDEV 1
+static int ipc = IPC_NETLINK;
+module_param(ipc, int, S_IRUGO);
+MODULE_PARM_DESC(ipc, "IPC mechanism for communicating with user-space CCP.\n0: netlink (default), 1: chardev /dev/ccpkp");
+
+
 void ccp_set_pacing_rate(struct sock *sk, uint32_t rate) {
     sk->sk_pacing_rate = rate;
 }
@@ -224,6 +231,10 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     struct ccp *ca = inet_csk_ca(sk);
     struct ccp_connection *dp = ca->dp;
 
+    if (ipc == IPC_CHARDEV) {
+        ccpkp_try_read();
+    }
+
     if (dp != NULL) {
         // load primitive registers
         ok = load_primitives(sk, rs);
@@ -310,6 +321,8 @@ void tcp_ccp_init(struct sock *sk) {
         .dst_port = tp->inet_conn.icsk_inet.inet_dport,
         .congAlg = "reno",
     };
+
+    pr_info("ccp: new flow\n");
     
     cpl = inet_csk_ca(sk);
     cpl->last_snd_una = tp->snd_una;
@@ -374,40 +387,52 @@ static int __init tcp_ccp_register(void) {
         .set_cwnd = &do_set_cwnd,
         .set_rate_abs = &do_set_rate_abs,
         .set_rate_rel = &do_set_rate_rel,
-        .send_msg = &nl_sendmsg,
         .now = &ccp_now,
         .since_usecs = &ccp_since,
         .after_usecs = &ccp_after
     };
 
-    ok = ccp_nl_sk(&ccp_read_msg); // TODO
-    if (ok < 0) {
+    getnstimeofday64(&tzero);
+    if (ipc == IPC_NETLINK) {
+        printk(KERN_INFO "ipc = netlink\n");
+        ok = ccp_nl_sk(&ccp_read_msg);
+        if (ok < 0) {
+            return -1;
+        }
+
+        dp.send_msg = &nl_sendmsg;
+        printk(KERN_INFO "initialized NL successfully\n");
+    } else if (ipc == IPC_CHARDEV) {
+        printk(KERN_INFO "ipc = chardev\n");
+        ok = ccpkp_init(&ccp_read_msg);
+        if (ok < 0) {
+            return -1;
+        }
+        dp.send_msg = &ccpkp_sendmsg;
+    } else {
+        printk(KERN_WARNING "unknown ipc code %d, use: 0=netlink 1=chardev", ipc);
         return -1;
     }
-
-    printk(KERN_INFO "init NL\n");
-    getnstimeofday64(&tzero);
 
     ok = ccp_init(&dp);
     if (ok < 0) {
         return -1;
     }
 
-    ok = ccpkp_init();
-    if (ok < 0) {
-		    return -1;
-    }
-
-    printk(KERN_INFO "Init ccp: %lu\n", sizeof(struct ccp));
+    printk(KERN_INFO "init ccp: %lu\n", sizeof(struct ccp));
     return tcp_register_congestion_control(&tcp_ccp_congestion_ops);
 }
 
 static void __exit tcp_ccp_unregister(void) {
-    printk(KERN_INFO "Exit ccp\n");
+    printk(KERN_INFO "exit ccp\n");
     ccp_free();
-    free_ccp_nl_sk();
+		if (ipc == IPC_NETLINK) {
+			free_ccp_nl_sk();
+		}
     tcp_unregister_congestion_control(&tcp_ccp_congestion_ops);
-    ccpkp_cleanup();
+		if (ipc == IPC_CHARDEV) {
+			ccpkp_cleanup();
+		}
 }
 
 module_init(tcp_ccp_register);
