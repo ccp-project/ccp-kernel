@@ -8,8 +8,8 @@
 struct ccp {
     // control
     u32 last_snd_una; // 4 B
-    u32 last_bytes_acked; // 4 B
-    u32 last_sacked_out; // 4 B
+    u32 last_bytes_acked; // 8 B
+    u32 last_sacked_out; // 12 B
 
     // communication
     struct ccp_connection *dp;

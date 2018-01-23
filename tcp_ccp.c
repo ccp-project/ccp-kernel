@@ -155,6 +155,12 @@ void load_primitives(struct sock *sk, const struct rate_sample *rs) {
     mmt->packets_in_flight = tcp_packets_in_flight(tp);
     mmt->snd_cwnd = tp->snd_cwnd * tp->mss_cache;
 
+    if (unlikely(tp->snd_una > tp->write_seq)) {
+        mmt->bytes_pending = ((u32) ~0U) - (tp->snd_una - tp->write_seq);
+    } else {
+        mmt->bytes_pending = (tp->write_seq - tp->snd_una);
+    }
+
     return;
 }
 
