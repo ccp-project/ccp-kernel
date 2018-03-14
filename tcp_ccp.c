@@ -3,6 +3,8 @@
 #include "libccp/ccp.h"
 
 #include <linux/module.h>
+#include <linux/time64.h>
+#include <linux/timekeeping.h>
 #include <net/tcp.h>
 
 #define CCP_FRAC_DENOM 10
@@ -75,16 +77,29 @@ static void do_set_rate_rel(
     ccp_set_pacing_rate(sk, newrate);
 }
 
-static u32 ccp_now(void) {
-    return tcp_jiffies32;
+struct timespec64 tzero;
+static u64 ccp_now(void) {
+    struct timespec64 now, diff;
+    getnstimeofday64(&now);
+    diff = timespec64_sub(now, tzero);
+    return timespec64_to_ns(&diff);
 }
 
-static u32 ccp_since(u32 then) {
-    return jiffies_to_usecs(tcp_jiffies32 - then);
+static u64 ccp_since(u64 then) {
+    struct timespec64 now, then_ts, diff;
+    getnstimeofday64(&now);
+    then_ts = tzero;
+    timespec64_add_ns(&then_ts, then);
+    diff = timespec64_sub(now, then_ts);
+    return timespec64_to_ns(&diff) / NSEC_PER_USEC;
 }
 
-static u32 ccp_after(u32 us) {
-    return tcp_jiffies32 + usecs_to_jiffies(us);
+static u64 ccp_after(u64 us) {
+    struct timespec64 now;
+    getnstimeofday64(&now);
+    now = timespec64_sub(now, tzero);
+    timespec64_add_ns(&now, us * NSEC_PER_USEC);
+    return timespec64_to_ns(&now);
 }
 
 // in dctcp code, in ack event used for ecn information per packet
@@ -327,6 +342,7 @@ static int __init tcp_ccp_register(void) {
     }
 
     printk(KERN_INFO "init NL\n");
+    getnstimeofday64(&tzero);
 
     ok = ccp_init(&dp);
     if (ok < 0) {
