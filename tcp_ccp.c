@@ -117,7 +117,7 @@ EXPORT_SYMBOL_GPL(tcp_ccp_in_ack_event);
 /* load the primitive registers of the rate sample - convert all to u64
  * raw values, not averaged
  */
-void load_primitives(struct sock *sk, const struct rate_sample *rs) {
+int load_primitives(struct sock *sk, const struct rate_sample *rs) {
     struct tcp_sock *tp = tcp_sk(sk);
     struct ccp *ca = inet_csk_ca(sk);
     struct ccp_primitives *mmt = &ca->dp->prims;
@@ -130,7 +130,7 @@ void load_primitives(struct sock *sk, const struct rate_sample *rs) {
        do_div(rin, rs->snd_int_us);
        do_div(rout, rs->rcv_int_us);
     } else {
-        return;
+        return -1;
     }
 
     mmt->bytes_acked = tp->bytes_acked - ca->last_bytes_acked;
@@ -153,6 +153,10 @@ void load_primitives(struct sock *sk, const struct rate_sample *rs) {
     mmt->rate_incoming = rout;
     mmt->bytes_in_flight = tcp_packets_in_flight(tp) * tp->mss_cache;
     mmt->packets_in_flight = tcp_packets_in_flight(tp);
+    if (tp->snd_cwnd <= 0) {
+        return -1;
+    }
+
     mmt->snd_cwnd = tp->snd_cwnd * tp->mss_cache;
 
     if (unlikely(tp->snd_una > tp->write_seq)) {
@@ -161,18 +165,23 @@ void load_primitives(struct sock *sk, const struct rate_sample *rs) {
         mmt->bytes_pending = (tp->write_seq - tp->snd_una);
     }
 
-    return;
+    return 0;
 }
 
 void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     // aggregate measurement
     // state = fold(state, rs)
+    int ok;
     struct ccp *ca = inet_csk_ca(sk);
     struct ccp_connection *dp = ca->dp;
 
     if (dp != NULL) {
         // load primitive registers
-        load_primitives(sk, rs);
+        ok = load_primitives(sk, rs);
+        if (ok < 0) {
+            return;
+        }
+
         ccp_invoke(dp);
         ca->dp->prims.was_timeout = false;
     } else {
