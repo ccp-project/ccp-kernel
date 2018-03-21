@@ -5,11 +5,19 @@
 #include <linux/tcp.h>
 #include "libccp/ccp.h"
 
+#define MAX_SKB_STORED 50
+
+struct skb_info {
+    u64 first_tx_mstamp; // choose the correct skb so the timestamp for first packet
+    u32 interval_us; // interval us as calculated from this SKB
+};
+
 struct ccp {
     // control
     u32 last_snd_una; // 4 B
     u32 last_bytes_acked; // 8 B
     u32 last_sacked_out; // 12 B
+    struct skb_info *skb_array; // array of future skb information
 
     // communication
     struct ccp_connection *dp;

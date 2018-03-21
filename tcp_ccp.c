@@ -109,9 +109,27 @@ void tcp_ccp_in_ack_event(struct sock *sk, u32 flags) {
     struct ccp *ca = inet_csk_ca(sk);
     struct ccp_primitives *mmt;
     u32 acked_bytes;
+    int i=0;
+    struct sk_buff *skb = tcp_write_queue_head(sk);
+    struct tcp_skb_cb *scb;
+
     if (ca->dp == NULL) {
         pr_info("ccp: ccp_connection not initialized");
         return;
+    }
+
+    for (i=0; i < MAX_SKB_STORED; i++) {
+        ca->skb_array[i].first_tx_mstamp = 0;
+        ca->skb_array[i].interval_us = 0;
+    }
+
+    for (i=0; i < MAX_SKB_STORED; i++) {
+        if (skb) {
+            scb = TCP_SKB_CB(skb);
+            ca->skb_array[i].first_tx_mstamp = skb->skb_mstamp;
+            ca->skb_array[i].interval_us = tcp_stamp_us_delta(skb->skb_mstamp, scb->tx.first_tx_mstamp);
+            skb = skb->next;
+        }
     }
     
     mmt = &ca->dp->prims;
@@ -136,16 +154,31 @@ int load_primitives(struct sock *sk, const struct rate_sample *rs) {
     struct tcp_sock *tp = tcp_sk(sk);
     struct ccp *ca = inet_csk_ca(sk);
     struct ccp_primitives *mmt = &ca->dp->prims;
+    int i=0;
 
     u64 rin = 0; // send bandwidth in bytes per second
     u64 rout = 0; // recv bandwidth in bytes per second
+    u64 ack_us = 0;
+    u64 snd_us = 0;
     int measured_valid_rate = rate_sample_valid(rs);
-    if ( measured_valid_rate == 0 ) {
-       rin = rout = (u64)rs->delivered * MTU * S_TO_US;
-       do_div(rin, rs->snd_int_us);
-       do_div(rout, rs->rcv_int_us);
-    } else {
+    if ( measured_valid_rate != 0 ) {
         return -1;
+    }
+
+    // receive rate
+    ack_us = tcp_stamp_us_delta(tp->tcp_mstamp, rs->prior_mstamp);
+    // send rate
+    for (i=0; i < MAX_SKB_STORED; i++) {
+        if (ca->skb_array[i].first_tx_mstamp == tp->first_tx_mstamp) {
+            snd_us = ca->skb_array[i].interval_us;
+            break;
+        }
+    }
+
+    if (ack_us != 0 && snd_us != 0) {
+        rin = rout = (u64)rs->delivered * MTU * S_TO_US;
+        do_div(rin, snd_us);
+        do_div(rout, ack_us);
     }
 
     mmt->bytes_acked = tp->bytes_acked - ca->last_bytes_acked;
@@ -164,8 +197,13 @@ int load_primitives(struct sock *sk, const struct rate_sample *rs) {
     mmt->bytes_misordered = mmt->packets_misordered * tp->mss_cache;
     mmt->lost_pkts_sample = rs->losses;
     mmt->rtt_sample_us = rs->rtt_us;
-    mmt->rate_outgoing = rin;
-    mmt->rate_incoming = rout;
+    if ( rin != 0 ) {
+        mmt->rate_outgoing = rin;
+    }
+
+    if ( rout != 0 ) {
+        mmt->rate_incoming = rout;
+    }
     mmt->bytes_in_flight = tcp_packets_in_flight(tp) * tp->mss_cache;
     mmt->packets_in_flight = tcp_packets_in_flight(tp);
     if (tp->snd_cwnd <= 0) {
@@ -282,6 +320,12 @@ void tcp_ccp_init(struct sock *sk) {
     cpl->last_bytes_acked = tp->bytes_acked;
     cpl->last_sacked_out = tp->sacked_out;
 
+    cpl->skb_array = (struct skb_info*)__MALLOC__(MAX_SKB_STORED * sizeof(struct skb_info));
+    if (!(cpl->skb_array)) {
+        pr_info("ccp: could not allocate skb array\n");
+    }
+    memset(cpl->skb_array, 0, MAX_SKB_STORED * sizeof(struct skb_info));
+
     cpl->dp = ccp_connection_start((void *) sk, &dp);
     if (cpl->dp == NULL) {
         pr_info("ccp: start connection failed\n");
@@ -305,6 +349,10 @@ void tcp_ccp_release(struct sock *sk) {
         ccp_connection_free(cpl->dp->index);
     } else {
         pr_info("ccp: already freed");
+    }
+    if (cpl->skb_array != NULL) {
+        kfree(cpl->skb_array);
+        cpl->skb_array = NULL;
     }
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_release);
