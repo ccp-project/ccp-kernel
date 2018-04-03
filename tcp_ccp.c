@@ -19,14 +19,10 @@ static int rate_sample_valid(const struct rate_sample *rs) {
   int ret = 0;
   if (rs->delivered <= 0)
     ret |= 1;
-  if (rs->snd_int_us <= 0)
-    ret |= 1 << 1;
-  if (rs->rcv_int_us <= 0)
-    ret |= 1 << 2;
   if (rs->interval_us <= 0)
-    ret |= 1 << 3;
+    ret |= 1 << 1;
   if (rs->rtt_us <= 0)
-    ret |= 1 << 4;
+    ret |= 1 << 2;
   return ret;
 }
 
