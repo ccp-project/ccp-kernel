@@ -1,5 +1,5 @@
 TARGET = ccp
-ccp-objs := libccp/serialize.o libccp/ccp_priv.o libccp/send_machine.o libccp/measurement_machine.o libccp/ccp.o tcp_ccp.o ccp_nl.o
+ccp-objs := libccp/serialize.o libccp/ccp_priv.o libccp/machine.o libccp/ccp.o tcp_ccp.o ccp_nl.o
 
 obj-m := $(TARGET).o
 
