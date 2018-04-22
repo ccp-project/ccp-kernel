@@ -12,7 +12,6 @@
 
 void ccp_set_pacing_rate(struct sock *sk, uint32_t rate) {
     sk->sk_pacing_rate = rate;
-    pr_info("ccp: Setting new rate %d Mbit/s (%d Bps)\n", sk->sk_pacing_rate / 125000, sk->sk_pacing_rate);
 }
 
 static int rate_sample_valid(const struct rate_sample *rs) {
