@@ -31,3 +31,6 @@ chgrp $group /dev/${device}
 chmod $mode  /dev/${device}
 
 fi
+
+ALLOWED=$(sudo cat /proc/sys/net/ipv4/tcp_allowed_congestion_control)
+echo "${ALLOWED} ccp" | sudo tee /proc/sys/net/ipv4/tcp_allowed_congestion_control

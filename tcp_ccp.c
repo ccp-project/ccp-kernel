@@ -426,13 +426,13 @@ static int __init tcp_ccp_register(void) {
 static void __exit tcp_ccp_unregister(void) {
     printk(KERN_INFO "exit ccp\n");
     ccp_free();
-		if (ipc == IPC_NETLINK) {
-			free_ccp_nl_sk();
-		}
-    tcp_unregister_congestion_control(&tcp_ccp_congestion_ops);
-		if (ipc == IPC_CHARDEV) {
-			ccpkp_cleanup();
-		}
+    if (ipc == IPC_NETLINK) {
+        free_ccp_nl_sk();
+    }
+tcp_unregister_congestion_control(&tcp_ccp_congestion_ops);
+    if (ipc == IPC_CHARDEV) {
+        ccpkp_cleanup();
+    }
 }
 
 module_init(tcp_ccp_register);

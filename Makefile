@@ -1,7 +1,6 @@
 # Comment/uncomment the following line to disable/enable debugging
 DEBUG = y
 ONE_PIPE = n
-MULTI = y
 
 # Add your debugging flag (or not) to EXTRA_CFLAGS
 ifeq ($(DEBUG),y)
@@ -14,20 +13,19 @@ ifeq ($(ONE_PIPE),y)
 	DEBFLAGS += -DONE_PIPE
 endif
 
-ifeq ($(MULTI),y)
-	DEBFLAGS += -DMULTI
-endif
-
 EXTRA_CFLAGS += $(DEBFLAGS)
+EXTRA_CFLAGS += -std=gnu99 -Wno-declaration-after-statement -fgnu89-inline
 
 
 TARGET = ccp
-ccp-objs := libccp/serialize.o libccp/ccp_priv.o libccp/machine.o libccp/ccp.o ccpkp/ccpkp.o tcp_ccp.o ccp_nl.o
+ccp-objs := libccp/serialize.o libccp/ccp_priv.o libccp/machine.o libccp/ccp.o ccpkp/ccpkp.o ccpkp/lfq/lfq.o tcp_ccp.o ccp_nl.o
 
 obj-m := $(TARGET).o
 
 all:
 	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+	$(MAKE) -C ./ccpkp
+	./ccpkp/lfq/multi-writer-test
 
 clean:
 	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
