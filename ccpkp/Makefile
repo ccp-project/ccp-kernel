@@ -15,7 +15,8 @@ endif
 
 test: lfq/lfq.c lfq/lfq.h lfq/multi-writer-test.c
 	gcc lfq/lfq.c lfq/multi-writer-test.c $(DEBFLAGS) -lpthread -o ./lfq/multi-writer-test
+	./lfq/multi-writer-test
 
 clean:
-	rm -rf *.o *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions
+	rm -rf *.o *~ ./lfq/multi-writer-test
 

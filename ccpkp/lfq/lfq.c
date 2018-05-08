@@ -1,6 +1,6 @@
 #include "lfq.h"
 
-int init_lfq(struct lfq *q) {
+int init_lfq(struct lfq *q, bool blocking) {
     q->buf       = __MALLOC__(BUF_LEN);
     if (!q->buf) {
         return -1;
@@ -27,6 +27,16 @@ int init_lfq(struct lfq *q) {
     q->free_head  = 0;
     q->free_tail  = BACKLOG-1;
 
+    q->blocking = blocking;
+    if (blocking) {
+#ifdef __KERNEL__
+        init_waitqueue_head(&q->nonempty);
+#else
+        pthread_mutex_init(&q->wait_lock, NULL);
+        pthread_cond_init(&q->nonempty, NULL);
+#endif
+    }
+
     return 0;
 }
 
@@ -36,9 +46,9 @@ void free_lfq(struct lfq *q) {
     ___FREE___(q->free_list);
 }
 
-void init_pipe(struct pipe *p) {
-    init_lfq(&p->ccp_write_queue);
-    init_lfq(&p->dp_write_queue);
+void init_pipe(struct pipe *p, bool blocking) {
+    init_lfq(&p->ccp_write_queue, blocking);
+    init_lfq(&p->dp_write_queue, blocking);
 }
 
 void free_pipe(struct pipe *p) {
@@ -91,14 +101,33 @@ uint16_t read_portus_msg_size(char *buf) {
     return *(((uint16_t *)buf)+1);
 }
 
+inline bool ready_for_reading(struct lfq *q) {
+    return (q->read_head != q->write_head) && (q->msg_list[q->read_head] != NULL);
+}
+
 ssize_t lfq_read(struct lfq *q, char *buf, size_t bytes_to_read) {
-    if (q->read_head == q->write_head) {
-        //PDEBUG("[reader  ] queue is empty\n");
-        return 0;
-    }
-    if ((q->msg_list[q->read_head]) == NULL) {
-        //PDEBUG("[reader  ] queue non-empty, but not ready for reading\n");
-        return 0;
+
+    if (q->blocking) {
+wait_until_nonempty:
+#ifndef __KERNEL__
+        pthread_mutex_lock(&q->wait_lock);
+#endif
+        while (!ready_for_reading(q)) {
+#ifdef __KERNEL__
+            if (wait_event_interruptible(q->nonempty, ready_for_reading(q))) {
+                return -ERESTARTSYS;
+            }
+#else
+            pthread_cond_wait(&q->nonempty, &q->wait_lock);
+#endif
+        }
+#ifndef __KERNEL__
+        pthread_mutex_unlock(&q->wait_lock);
+#endif
+    } else {
+        if (!ready_for_reading(q)) {
+            return 0;
+        }
     }
 
     int bytes_read = 0;
@@ -144,6 +173,10 @@ ssize_t lfq_read(struct lfq *q, char *buf, size_t bytes_to_read) {
         q->msg_list[r] = NULL;
         buf += bytes_in_block;
     }
+    
+    if (bytes_read == 0) {
+        goto wait_until_nonempty;
+    }
 
     return bytes_read;
 }
@@ -183,6 +216,16 @@ ssize_t lfq_write(struct lfq *q, const char *buf, size_t bytes_to_write, int id)
 
     // Assign block to acquired position
     q->msg_list[new_i-1] = block;
+
+    if (q->blocking) {
+#ifdef __KERNEL__
+        wake_up_interruptible(&q->nonempty);
+#else
+        pthread_mutex_lock(&q->wait_lock);
+        pthread_cond_signal(&q->nonempty);
+        pthread_mutex_unlock(&q->wait_lock);
+#endif
+    }
 
     return bytes_to_write;
 }

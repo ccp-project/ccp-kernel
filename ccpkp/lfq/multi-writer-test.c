@@ -47,14 +47,11 @@ void *reader(void *args) {
 	int num_recvd = 0;
     usleep(1000);
 	while (num_recvd < 10000) {
-		//printf("trying to read\n");
 		int read = dp_read(p, recv, 2048);
 		if (read > 0) {
-			//printf("[%d] got %d bytes\n", num_recvd, read);
 			char *p = recv;
 			while (read > 0) {
 				int sz = read_portus_msg_size(p);
-				//print_buf(p);
 				p+= sz;
 				read -= sz;
 				num_recvd++;
@@ -70,7 +67,7 @@ void *writer1(void *args) {
 	size_t buf_len;
 
 	for (int i=0; i<2500; i++) {
-		int wrote = 0;//ccp_write(p, buf, buf_len, 1);
+		int wrote = 0;
 		while (wrote <= 0) {
 			usleep(100);
 			char a[25];
@@ -88,7 +85,7 @@ void *writer2(void *args) {
 	struct pipe *p = (struct pipe *)args;
 	size_t buf_len;
 	for (int i=0; i<5000; i++) {
-		int wrote = 0;//ccp_write(p, buf, buf_len, 2);
+		int wrote = 0;
 		while (wrote <= 0) {
 			usleep(100);
 			char a[25];
@@ -106,7 +103,7 @@ void *writer3(void *args) {
 	struct pipe *p = (struct pipe *)args;
 	size_t buf_len;
 	for (int i=0; i<2500; i++) {
-		int wrote = 0;//ccp_write(p, buf, buf_len, 3);
+		int wrote = 0;
 		while (wrote <= 0) {
 			usleep(100);
 			char a[25];
@@ -124,23 +121,45 @@ void *writer3(void *args) {
 int main() {
 	srand(time(NULL));
 
-	struct pipe *p = (struct pipe *) malloc(sizeof(struct pipe));
-	init_pipe(p);
+        printf("LFQ multiple writers test\n");
 
+        printf("blocking......");
 
-	pthread_t t1, t2, t3, t4;
-	pthread_create(&t1, NULL, reader, (void *)p);
-	pthread_create(&t2, NULL, writer1, (void *)p);
-	pthread_create(&t3, NULL, writer2, (void *)p);
-	pthread_create(&t4, NULL, writer3, (void *)p);
+        {
+            struct pipe *p = (struct pipe *) malloc(sizeof(struct pipe));
+            init_pipe(p, true);
+            pthread_t t1, t2, t3, t4;
+            pthread_create(&t1, NULL, reader, (void *)p);
+            pthread_create(&t2, NULL, writer1, (void *)p);
+            pthread_create(&t3, NULL, writer2, (void *)p);
+            pthread_create(&t4, NULL, writer3, (void *)p);
+            pthread_join(t1, NULL);
+            pthread_join(t2, NULL);
+            pthread_join(t3, NULL);
+            pthread_join(t4, NULL);
+            free_pipe(p);
+        }
 
-	pthread_join(t1, NULL);
-	pthread_join(t2, NULL);
-	pthread_join(t3, NULL);
-	pthread_join(t4, NULL);
+        printf("passed\n");
 
-        printf("LFQ multiple writers test passed.\n");
-	free_pipe(p);
+        printf("nonblocking...");
+
+        {
+            struct pipe *p = (struct pipe *) malloc(sizeof(struct pipe));
+            init_pipe(p, false);
+            pthread_t t1, t2, t3, t4;
+            pthread_create(&t1, NULL, reader, (void *)p);
+            pthread_create(&t2, NULL, writer1, (void *)p);
+            pthread_create(&t3, NULL, writer2, (void *)p);
+            pthread_create(&t4, NULL, writer3, (void *)p);
+            pthread_join(t1, NULL);
+            pthread_join(t2, NULL);
+            pthread_join(t3, NULL);
+            pthread_join(t4, NULL);
+            free_pipe(p);
+        }
+
+        printf("passed\n");
 
 	return 0;
 }

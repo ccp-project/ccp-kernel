@@ -1,9 +1,10 @@
 #ifndef _LFQ_H_
 #define _LFQ_H_
 
-
 #ifdef __KERNEL__
-    #include<linux/slab.h>
+    #include <linux/slab.h>
+    #include <linux/sched.h>
+    #include <linux/wait.h>
 
 #ifndef __MALLOC__
     #define __MALLOC__(size) kmalloc(size, GFP_KERNEL)
@@ -21,6 +22,7 @@
     #include <stdint.h>
     #include <errno.h>
     #include <assert.h>
+    #include <pthread.h>
 #ifndef __MALLOC__
     #define __MALLOC__(size) malloc(size)
 #endif
@@ -71,6 +73,14 @@ struct lfq {
 
     idx_t read_head, write_head;
     idx_t free_head, free_tail;
+
+    bool blocking;
+#ifdef __KERNEL__
+    wait_queue_head_t nonempty;
+#else
+    pthread_cond_t nonempty;
+    pthread_mutex_t wait_lock;
+#endif
 };
 
 struct pipe {
@@ -78,9 +88,9 @@ struct pipe {
     struct lfq dp_write_queue;
 };
 
-int init_lfq(struct lfq *q);
+int init_lfq(struct lfq *q, bool blocking);
 void free_lfq(struct lfq *q);
-void init_pipe(struct pipe *p);
+void init_pipe(struct pipe *p, bool blocking);
 void free_pipe(struct pipe *p);
 
 char* _lfq_acquire_free_block(struct lfq *q);

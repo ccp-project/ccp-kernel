@@ -107,6 +107,9 @@ int ccpkp_user_open(struct inode *inp, struct file *fp) {
     // Create new pipe for this CCP
     struct kpipe *pipe = kmalloc(sizeof(struct kpipe), GFP_KERNEL);
     int i, ccp_id; 
+#ifndef ONE_PIPE
+    bool user_read_nonblock = fp->f_flags & O_NONBLOCK;
+#endif
 
     memset(pipe, 0, sizeof(struct kpipe));
     if (!pipe) {
@@ -114,15 +117,15 @@ int ccpkp_user_open(struct inode *inp, struct file *fp) {
     }
 
     PDEBUG("init lfq");
-    if (init_lfq(&pipe->ccp_write_queue) < 0) {
+    if (init_lfq(&pipe->ccp_write_queue, false) < 0) {
         return -ENOMEM;
     }
-    #ifndef ONE_PIPE
+#ifndef ONE_PIPE
     PDEBUG("init lfq");
-    if (init_lfq(&pipe->dp_write_queue) < 0) {
+    if (init_lfq(&pipe->dp_write_queue, !user_read_nonblock) < 0) {
         return -ENOMEM;
     }
-    #endif
+#endif
     
     // Store pointer to pipe in struct file
     fp->private_data = pipe;
@@ -197,7 +200,7 @@ ssize_t ccpkp_user_read(struct file *fp, char *buf, size_t bytes_to_read, loff_t
 // module stores pointer to corresponding ccp kpipe for each socket
 ssize_t ccpkp_kernel_read(struct kpipe *pipe, char *buf, size_t bytes_to_read) {
 #ifdef ONE_PIPE
-    printk("error: compiled with a single pipe for test purposes. recompile with ONE_PIPE=n\n")
+    printk("error: compiled with a single pipe for test purposes. recompile with ONE_PIPE=n\n");
     return 0;
 #endif
     struct lfq *q = &(pipe->ccp_write_queue);
@@ -216,7 +219,7 @@ ssize_t ccpkp_user_write(struct file *fp, const char *buf, size_t bytes_to_write
 // module stores pointer to corresponding ccp kpipe for each socket
 ssize_t ccpkp_kernel_write(struct kpipe *pipe, const char *buf, size_t bytes_to_write, int id) {
 #ifdef ONE_PIPE
-    printk("error: compiled with a single pipe for test purposes. recompile with ONE_PIPE=n\n")
+    printk("error: compiled with a single pipe for test purposes. recompile with ONE_PIPE=n\n");
     return 0;
 #endif
     struct lfq *q = &(pipe->dp_write_queue);

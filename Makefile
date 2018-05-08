@@ -24,8 +24,6 @@ obj-m := $(TARGET).o
 
 all:
 	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
-	$(MAKE) -C ./ccpkp
-	./ccpkp/lfq/multi-writer-test
 
 clean:
 	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
