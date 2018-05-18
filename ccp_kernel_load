@@ -3,6 +3,22 @@ module="ccp"
 device="ccpkp"
 mode="664"
 
+usage() {
+    echo "usage: sudo ./ccp_kernel_load ipc=[0|1]"
+    echo "       netlink  : ipc=0"
+    echo "       char-dev : ipc=1"
+}
+
+if [ "$EUID" -ne 0 ]; then 
+    echo "error: must run as root"
+    usage
+    exit 1
+fi
+
+if [ "$#" -ne 1 ]; then
+    usage
+    exit 1
+fi
 
 # invoke insmod with all arguments we got
 # and use a pathname, as insmod doesn't look in . by default
