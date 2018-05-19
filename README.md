@@ -1,4 +1,5 @@
-# ccp-kernel
+# ccp-kernel [![Build Status](https://travis-ci.org/ccp-project/ccp-kernel.svg?branch=master)](https://travis-ci.org/ccp-project/ccp-kernel)
+
 Kernel module implementing a kernel datapath for the CCP
 
 ## (1) Compile a custom kernel
