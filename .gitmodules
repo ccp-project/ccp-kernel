@@ -1,3 +1,3 @@
 [submodule "libccp"]
 	path = libccp
-	url = git@github.com:ccp-project/libccp.git
+        url = https://github.com/ccp-project/libccp.git
