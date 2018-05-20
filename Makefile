@@ -1,10 +1,10 @@
 # Comment/uncomment the following line to disable/enable debugging
-DEBUG = y
+DEBUG = n
 ONE_PIPE = n
 
 # Add your debugging flag (or not) to EXTRA_CFLAGS
 ifeq ($(DEBUG),y)
-  DEBFLAGS = -O1 -g -DDEBUG_MODE # "-O" is needed to expand inlines
+  DEBFLAGS = -O1 -g -D__DEBUG__ # "-O" is needed to expand inlines
 else
   DEBFLAGS = -Ofast
 endif
