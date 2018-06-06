@@ -5,6 +5,7 @@
     #include <linux/slab.h>
     #include <linux/sched.h>
     #include <linux/wait.h>
+    #include <linux/uaccess.h>
 
 #ifndef __MALLOC__
     #define __MALLOC__(size) kmalloc(size, GFP_KERNEL)
@@ -13,7 +14,13 @@
     #define ___FREE___(p)      kfree(p)
 #endif
     #define CAS(a,o,n)       cmpxchg(a,o,n) == o
-    #define ASSERT(cond)     
+    #define ASSERT(cond)
+    #ifndef COPY_TO_USER
+            #define COPY_TO_USER(dst, src, n) copy_to_user(dst, src, n)
+    #endif
+    #ifndef COPY_FROM_USER
+            #define COPY_FROM_USER(dst, src, n) copy_from_user(dst, src, n)
+    #endif
 #else
     #include <stdbool.h>
     #include <stdlib.h>
@@ -31,6 +38,12 @@
 #endif
     #define CAS(a,o,n)       __sync_bool_compare_and_swap(a,o,n)
     #define ASSERT(cond) assert(cond)
+    #ifndef COPY_TO_USER
+            #define COPY_TO_USER(dst, src, n) memcpy(dst, src, n)
+    #endif
+    #ifndef COPY_FROM_USER
+            #define COPY_FROM_USER(dst, src, n) memcpy(dst, src, n)
+    #endif
 #endif
 
 
