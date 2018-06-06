@@ -167,7 +167,7 @@ wait_until_nonempty:
         char *block = q->msg_list[r];
         uint16_t bytes_in_block = read_portus_msg_size(block);
         PDEBUG("[reader  ] read #%d (@%ld) : %s\n", r, block-q->buf, block+4);
-        memcpy(buf, block, bytes_in_block);
+        COPY_TO_USER(buf, block, bytes_in_block);
         bytes_read += bytes_in_block;
         _lfq_return_block(q, block);
         q->msg_list[r] = NULL;
@@ -192,7 +192,7 @@ ssize_t lfq_write(struct lfq *q, const char *buf, size_t bytes_to_write, int id)
     PDEBUG("[writer %d] acquired free block at %ld (head=%d, tail=%d)\n", id, block - q->buf, q->free_head, q->free_tail);
 
     // Copy data into block
-    memcpy(block, buf, bytes_to_write);
+    COPY_FROM_USER(block, buf, bytes_to_write);
 
     // Get next position in queue
     idx_t old_i, new_i;
