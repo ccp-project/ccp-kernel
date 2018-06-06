@@ -7,12 +7,12 @@
     #include <linux/wait.h>
     #include <linux/uaccess.h>
 
-#ifndef __MALLOC__
-    #define __MALLOC__(size) kmalloc(size, GFP_KERNEL)
-#endif
-#ifndef ___FREE___
-    #define ___FREE___(p)      kfree(p)
-#endif
+    #ifndef __MALLOC__
+            #define __MALLOC__(size) kmalloc(size, GFP_KERNEL)
+    #endif
+    #ifndef ___FREE___
+            #define ___FREE___(p)      kfree(p)
+    #endif
     #define CAS(a,o,n)       cmpxchg(a,o,n) == o
     #define ASSERT(cond)
     #ifndef COPY_TO_USER
@@ -30,12 +30,13 @@
     #include <errno.h>
     #include <assert.h>
     #include <pthread.h>
-#ifndef __MALLOC__
-    #define __MALLOC__(size) malloc(size)
-#endif
-#ifndef ___FREE___
-    #define ___FREE___(p)      free(p)
-#endif
+
+    #ifndef __MALLOC__
+        #define __MALLOC__(size) malloc(size)
+    #endif
+    #ifndef ___FREE___
+        #define ___FREE___(p)      free(p)
+    #endif
     #define CAS(a,o,n)       __sync_bool_compare_and_swap(a,o,n)
     #define ASSERT(cond) assert(cond)
     #ifndef COPY_TO_USER
