@@ -1,5 +1,25 @@
 #include "lfq.h"
 
+void debug_buf(const char *buf) {
+	char out[256];
+	char *tmp = out;
+        int wrote = sprintf(tmp, "buf=%p\n", buf); 
+        tmp += wrote;
+	for(int i=0; i<64; i++) {
+		sprintf(tmp, "|%2d", i);
+		tmp += 3;
+	}
+	sprintf(tmp, "|\n");
+	printk( KERN_DEBUG "%s", out);
+	tmp = out;
+	for(int i=0; i<64; i++) {
+		sprintf(tmp, "|%02x", buf[i]);
+		tmp += 3;
+	}
+	sprintf(tmp, "|\n");
+	printk( KERN_DEBUG "%s", out);
+}
+
 int init_lfq(struct lfq *q, bool blocking) {
     q->buf       = __MALLOC__(BUF_LEN);
     if (!q->buf) {
@@ -105,7 +125,7 @@ inline bool ready_for_reading(struct lfq *q) {
     return (q->read_head != q->write_head) && (q->msg_list[q->read_head] != NULL);
 }
 
-ssize_t lfq_read(struct lfq *q, char *buf, size_t bytes_to_read) {
+ssize_t lfq_read(struct lfq *q, char *buf, size_t bytes_to_read, int reader_t) {
 
     if (q->blocking) {
 wait_until_nonempty:
@@ -166,8 +186,12 @@ wait_until_nonempty:
         int r = i % BACKLOG;
         char *block = q->msg_list[r];
         uint16_t bytes_in_block = read_portus_msg_size(block);
-        PDEBUG("[reader  ] read #%d (@%ld) : %s\n", r, block-q->buf, block+4);
-        COPY_TO_USER(buf, block, bytes_in_block);
+        PDEBUG("[reader  ] read #%d (@%ld) : %d bytes\n", r, block-q->buf, bytes_in_block);
+        if (reader_t == USERSPACE) {
+            COPY_TO_USER(buf, block, bytes_in_block);
+        } else { // reader_t == KERNELSPACE
+            memcpy(buf, block, bytes_in_block);
+        }
         bytes_read += bytes_in_block;
         _lfq_return_block(q, block);
         q->msg_list[r] = NULL;
@@ -182,7 +206,7 @@ wait_until_nonempty:
 }
 
 
-ssize_t lfq_write(struct lfq *q, const char *buf, size_t bytes_to_write, int id) {
+ssize_t lfq_write(struct lfq *q, const char *buf, size_t bytes_to_write, int id, int writer_t) {
     // Get free block
     char *block = _lfq_acquire_free_block(q);
     if (block == NULL) {
@@ -192,7 +216,11 @@ ssize_t lfq_write(struct lfq *q, const char *buf, size_t bytes_to_write, int id)
     PDEBUG("[writer %d] acquired free block at %ld (head=%d, tail=%d)\n", id, block - q->buf, q->free_head, q->free_tail);
 
     // Copy data into block
-    COPY_FROM_USER(block, buf, bytes_to_write);
+    if (writer_t == USERSPACE) {
+        COPY_FROM_USER(block, buf, bytes_to_write);
+    } else { // writer_t == KERNELSPACE
+        memcpy(block, buf, bytes_to_write);
+    }
 
     // Get next position in queue
     idx_t old_i, new_i;
@@ -212,7 +240,7 @@ ssize_t lfq_write(struct lfq *q, const char *buf, size_t bytes_to_write, int id)
     if (new_i == 0) {
         new_i = BACKLOG;
     }
-    PDEBUG("[writer %d] secured queue #%d : %s\n", id, (new_i-1), buf+4);
+    PDEBUG("[writer %d] secured queue #%d : %ld bytes\n", id, (new_i-1), bytes_to_write);
 
     // Assign block to acquired position
     q->msg_list[new_i-1] = block;
@@ -231,14 +259,14 @@ ssize_t lfq_write(struct lfq *q, const char *buf, size_t bytes_to_write, int id)
 }
 
 ssize_t ccp_write(struct pipe *p, const char *buf, size_t bytes_to_write, int id) {
-    return lfq_write(&p->ccp_write_queue, buf, bytes_to_write, id);
+    return lfq_write(&p->ccp_write_queue, buf, bytes_to_write, id, USERSPACE);
 }
 ssize_t ccp_read(struct pipe *p, char *buf, size_t bytes_to_read) {
-    return lfq_read(&p->dp_write_queue, buf, bytes_to_read);
+    return lfq_read(&p->dp_write_queue, buf, bytes_to_read, USERSPACE);
 }
 ssize_t dp_write(struct pipe *p, const char *buf, size_t bytes_to_write, int id) {
-    return lfq_write(&p->dp_write_queue, buf, bytes_to_write, id);
+    return lfq_write(&p->dp_write_queue, buf, bytes_to_write, id, KERNELSPACE);
 }
 ssize_t dp_read(struct pipe *p, char *buf, size_t bytes_to_read) {
-    return lfq_read(&p->ccp_write_queue, buf, bytes_to_read);
+    return lfq_read(&p->ccp_write_queue, buf, bytes_to_read, KERNELSPACE);
 }
