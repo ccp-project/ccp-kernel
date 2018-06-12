@@ -73,7 +73,8 @@
 #endif
 
 #define idx_t uint16_t 
-
+#define KERNELSPACE 0
+#define USERSPACE 1
 
 // Must be a divisor of max val of id_t
 #define BACKLOG 1024
@@ -111,8 +112,8 @@ char* _lfq_acquire_free_block(struct lfq *q);
 void _lfq_return_block(struct lfq *q, char *block);
 uint16_t read_portus_msg_size(char *buf);
 
-ssize_t lfq_read(struct lfq *q, char *buf, size_t bytes_to_read);
-ssize_t lfq_write(struct lfq *q, const char *buf, size_t bytes_to_write, int id);
+ssize_t lfq_read(struct lfq *q, char *buf, size_t bytes_to_read, int reader_t);
+ssize_t lfq_write(struct lfq *q, const char *buf, size_t bytes_to_write, int id, int writer_t);
 ssize_t ccp_write(struct pipe *p, const char *buf, size_t bytes_to_write, int id);
 ssize_t ccp_read(struct pipe *p, char *buf, size_t bytes_to_read);
 ssize_t dp_write(struct pipe *p, const char *buf, size_t bytes_to_write, int id);

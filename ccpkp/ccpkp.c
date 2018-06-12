@@ -193,8 +193,8 @@ ssize_t ccpkp_user_read(struct file *fp, char *buf, size_t bytes_to_read, loff_t
 #else
     struct lfq *q = &(pipe->dp_write_queue);
 #endif
-    //PDEBUG("user wants to read %lu bytes", bytes_to_read);
-    return lfq_read(q, buf, bytes_to_read);
+    PDEBUG("user wants to read %lu bytes", bytes_to_read);
+    return lfq_read(q, buf, bytes_to_read, USERSPACE);
 }
 
 // module stores pointer to corresponding ccp kpipe for each socket
@@ -204,15 +204,15 @@ ssize_t ccpkp_kernel_read(struct kpipe *pipe, char *buf, size_t bytes_to_read) {
     return 0;
 #endif
     struct lfq *q = &(pipe->ccp_write_queue);
-    //DEBUG("kernel wants to read %lu bytes", bytes_to_read);
-    return lfq_read(q, buf, bytes_to_read);
+    PDEBUG("kernel wants to read %lu bytes", bytes_to_read);
+    return lfq_read(q, buf, bytes_to_read, KERNELSPACE);
 }
 
 ssize_t ccpkp_user_write(struct file *fp, const char *buf, size_t bytes_to_write, loff_t *offset) {
     struct kpipe *pipe = fp->private_data;
     struct lfq *q = &(pipe->ccp_write_queue);
-    //PDEBUG("user wants to write %lu bytes", bytes_to_write);
-    return lfq_write(q, buf, bytes_to_write, 0);
+    PDEBUG("user wants to write %lu bytes", bytes_to_write);
+    return lfq_write(q, buf, bytes_to_write, 0, USERSPACE);
 }
 
 
@@ -223,8 +223,8 @@ ssize_t ccpkp_kernel_write(struct kpipe *pipe, const char *buf, size_t bytes_to_
     return 0;
 #endif
     struct lfq *q = &(pipe->dp_write_queue);
-    //PDEBUG("kernel wants to write %lu bytes", bytes_to_write);
-    return lfq_write(q, buf, bytes_to_write, id);
+    PDEBUG("kernel wants to write %lu bytes", bytes_to_write);
+    return lfq_write(q, buf, bytes_to_write, id, KERNELSPACE);
 }
 
 
@@ -233,7 +233,7 @@ void ccpkp_try_read(void) {
     ssize_t bytes_read;
     bytes_read = ccpkp_kernel_read(ccpkp_dev->pipes[curr_ccp_id], recvbuf, RECVBUF_LEN);
     if (bytes_read > 0) {
-        PDEBUG("Kernel read %ld bytes", bytes_read);
+        PDEBUG("kernel read %ld bytes", bytes_read);
         libccp_read_msg(recvbuf, bytes_read);
     }
 }
@@ -247,6 +247,6 @@ int ccpkp_sendmsg(
     if (bytes_to_write < 0) {
         return -1;
     }
-    PDEBUG("CCP trying to write %d bytes", bytes_to_write);
+    PDEBUG("kernel->user trying to write %d bytes", bytes_to_write);
     return ccpkp_kernel_write(ccpkp_dev->pipes[curr_ccp_id], buf, (size_t) bytes_to_write, (int) conn->index+1);
 }
