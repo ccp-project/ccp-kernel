@@ -48,7 +48,7 @@
 #endif
 
 
-#ifdef DEBUG_MODE
+#ifdef __DEBUG__
     #ifdef __KERNEL__
          /* This one if debugging is on, and kernel space */
         #define PDEBUG(fmt, args...) printk( KERN_DEBUG "ccp-kpipe: " fmt, ## args)
