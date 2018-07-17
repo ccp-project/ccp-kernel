@@ -14,7 +14,7 @@ ifeq ($(ONE_PIPE),y)
 endif
 
 EXTRA_CFLAGS += $(DEBFLAGS)
-EXTRA_CFLAGS += -std=gnu99 -Wno-declaration-after-statement -fgnu89-inline
+EXTRA_CFLAGS += -std=gnu99 -Wno-declaration-after-statement -fgnu89-inline -D__KERNEL__
 
 
 TARGET = ccp
