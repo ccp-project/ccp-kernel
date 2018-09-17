@@ -1,40 +1,42 @@
 # ccp-kernel
 Kernel module implementing a kernel datapath for the CCP
 
-## (1) Compile a custom kernel
-ccp-kernel runs on a patched Linux 4.10 kernel. Get the patched kernel sources from
+## (1) Set up the ccp-kernel datapath
 
-https://github.com/ngsrinivas/linux-fork
+We support Linux kernel versions 4.13 and 4.14. For later kernel versions,
+you may be interested in [our patch](https://github.com/ngsrinivas/linux-fork/),
+which [is being upstreamed](https://patchwork.ozlabs.org/patch/941532/).
 
-and follow the instructions from
+Once you have compiled (`make`) the kernel module, you can load it:
 
-https://kernelnewbies.org/KernelBuild
+```
+sudo ./ccp_kernel_load ipc=0
+```
 
-You don't need to download the latest stable build as shown there; the
-linux-fork repository has 
-the source code you need. Compile the kernel from the nimbus branch,
-and follow the tutorial until the point you're able to boot into the
-freshly compiled kernel.
+to use the default netlink socket IPC backend. To use our character device:
 
-If you run Ubuntu 17.04, which comes with a default 4.10 kernel,
-you'll have minimal issues with your kernel configuration. We've also
-tested the custom kernel and modules on Ubuntu 16.04 LTS without too
-much trouble.
+```
+sudo ./ccp_kernel_load ipc=1
+```
 
-## (2) Set up the ccp-kernel datapath
-
-Once you boot into the custom kernel, you should be able to compile
-and load the ccp-kernel modules from the master branch (use `modprobe`
-or `insmod` to load the compiled .ko module). Once loaded, you should
-see ccp as one of the available TCP congestion control algorithms:
+Once you have done this, you should
+see CCP as one of the available TCP congestion control algorithms:
 
 ```
 sudo sysctl net.ipv4.tcp_available_congestion_control
 ```
 
+There should also be some initialization log messages in the syslog:
+
+```
+dmesg
+```
+
+## (2) Set kernel congfigurations
+
 You should add the CCP to the list of allowed congestion control
 algorithms, and make FQ your default qdisc (FQ is used for packet
-pacing):
+pacing). In later kernels, CCP also supports in-stack pacing.
 
 ```
 sudo sysctl -w net.ipv4.tcp_allowed_congestion_control="cubic reno ccp"
