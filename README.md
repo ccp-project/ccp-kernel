@@ -45,7 +45,7 @@ sudo sysctl -w net.core.default_qdisc=fq
 
 You've now started the CCP data path in the Linux kernel. 
 To run new CCP transport algorithms, you must set up and run the
-CCP user-space (https://github.mit.edu/nebula/ccp) separately.
+CCP user-space (https://github.com/ccp-project/portus) separately.
 
 ## (3) Test CCP
 
