@@ -242,6 +242,9 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
             return;
         }
 
+        if (ca->dp->prims.was_timeout) {
+            pr_info("flow %d ccp_invoke\n", dp->index);
+        }
         ccp_invoke(dp);
         ca->dp->prims.was_timeout = false;
     } else {
@@ -286,10 +289,11 @@ void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
     struct ccp *cpl = inet_csk_ca(sk);
     switch (new_state) {
         case TCP_CA_Loss:
-            printk(KERN_INFO "entered TCP_CA_Loss (timeout drop)\n");
+            pr_info("flow %d timeout\n", cpl->dp->index);
             if (cpl->dp != NULL) {
                 cpl->dp->prims.was_timeout = true;
             }
+            // TODO MAYBE ccp_invoke()???
 
             return;
         case TCP_CA_Recovery:
