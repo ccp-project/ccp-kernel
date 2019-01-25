@@ -290,7 +290,7 @@ void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
             if (cpl->dp != NULL) {
                 cpl->dp->prims.was_timeout = true;
             }
-
+            ccp_invoke(cpl->dp);
             return;
         case TCP_CA_Recovery:
             printk(KERN_INFO "entered TCP_CA_Recovery (dupack drop)\n");
