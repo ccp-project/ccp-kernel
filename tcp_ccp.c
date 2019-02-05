@@ -1,6 +1,12 @@
 #include "tcp_ccp.h"
 #include "libccp/ccp.h"
 
+#if __KERNEL_VERSION_MINOR__ <= 16 && __KERNEL_VERSION_MINOR__ >= 13
+#define COMPAT_MODE
+#elif __KERNEL_VERSION_MINOR__ >= 19
+#define RATESAMPLE_MODE
+#endif
+
 #define IPC_NETLINK 0
 #define IPC_CHARDEV 1
 
@@ -112,15 +118,18 @@ void tcp_ccp_in_ack_event(struct sock *sk, u32 flags) {
     struct ccp *ca = inet_csk_ca(sk);
     struct ccp_primitives *mmt;
     u32 acked_bytes;
+#ifdef COMPAT_MODE
     int i=0;
     struct sk_buff *skb = tcp_write_queue_head(sk);
     struct tcp_skb_cb *scb;
+#endif
 
     if (ca->dp == NULL) {
         pr_info("ccp: ccp_connection not initialized");
         return;
     }
 
+#ifdef COMPAT_MODE
     for (i=0; i < MAX_SKB_STORED; i++) {
         ca->skb_array[i].first_tx_mstamp = 0;
         ca->skb_array[i].interval_us = 0;
@@ -134,6 +143,7 @@ void tcp_ccp_in_ack_event(struct sock *sk, u32 flags) {
             skb = skb->next;
         }
     }
+#endif
     
     mmt = &ca->dp->prims;
     acked_bytes = tp->snd_una - ca->last_snd_una;
@@ -157,7 +167,9 @@ int load_primitives(struct sock *sk, const struct rate_sample *rs) {
     struct tcp_sock *tp = tcp_sk(sk);
     struct ccp *ca = inet_csk_ca(sk);
     struct ccp_primitives *mmt = &ca->dp->prims;
+#ifdef COMPAT_MODE
     int i=0;
+#endif
 
     u64 rin = 0; // send bandwidth in bytes per second
     u64 rout = 0; // recv bandwidth in bytes per second
@@ -168,6 +180,7 @@ int load_primitives(struct sock *sk, const struct rate_sample *rs) {
         return -1;
     }
 
+#ifdef COMPAT_MODE
     // receive rate
     ack_us = tcp_stamp_us_delta(tp->tcp_mstamp, rs->prior_mstamp);
     // send rate
@@ -177,12 +190,18 @@ int load_primitives(struct sock *sk, const struct rate_sample *rs) {
             break;
         }
     }
+#endif
+#ifdef RATESAMPLE_MODE
+    ack_us = rs->rcv_interval_us;
+    snd_us = rs->snd_interval_us;
+#endif
 
     if (ack_us != 0 && snd_us != 0) {
         rin = rout = (u64)rs->delivered * MTU * S_TO_US;
         do_div(rin, snd_us);
         do_div(rout, ack_us);
     }
+
 
     mmt->bytes_acked = tp->bytes_acked - ca->last_bytes_acked;
     ca->last_bytes_acked = tp->bytes_acked;
@@ -394,12 +413,11 @@ static int __init tcp_ccp_register(void) {
 
     getnstimeofday64(&tzero);
 
-#if __KERNEL_VERSION_MINOR__ <= 16 && __KERNEL_VERSION_MINOR__ >= 13
+#ifdef COMPAT_MODE
     pr_info("[ccp] Compatibility mode: 4.13 <= kernel version <= 4.16\n");
-#define COMPAT_MODE
-#elif __KERNEL_VERSION_MINOR__ >= 19
-    pr_info("[ccp] Rate-sample mode: 4.13 <= kernel version <= 4.16\n");
-#define RATESAMPLE_MODE
+#endif
+#ifdef RATESAMPLE_MODE
+    pr_info("[ccp] Rate-sample mode: 4.19 <= kernel version\n");
 #endif
 
 #if __IPC__ == IPC_NETLINK
