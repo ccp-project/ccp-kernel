@@ -21,9 +21,11 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
+make IPC=$(echo $1 | awk -F'=' '{print $NF}') || exit
+
 # invoke insmod with all arguments we got
 # and use a pathname, as insmod doesn't look in . by default
-/sbin/insmod ./$module.ko $* || ((dmesg | tail) && exit 1)
+/sbin/insmod ./$module.ko || ((dmesg | tail) && exit 1)
 
 # only need the following for char-dev
 if [ "$1" = "ipc=1" ];

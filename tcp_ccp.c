@@ -1,7 +1,14 @@
 #include "tcp_ccp.h"
-#include "ccp_nl.h"
 #include "libccp/ccp.h"
+
+#define IPC_NETLINK 0
+#define IPC_CHARDEV 1
+
+#if __IPC__ == IPC_NETLINK
+#include "ccp_nl.h"
+#elif __IPC__ == IPC_CHARDEV
 #include "ccpkp/ccpkp.h"
+#endif
 
 #include <linux/module.h>
 #include <linux/time64.h>
@@ -10,13 +17,6 @@
 
 #define CCP_FRAC_DENOM 10
 #define CCP_EWMA_RECENCY 6
-
-#define IPC_NETLINK 0
-#define IPC_CHARDEV 1
-static int ipc = IPC_NETLINK;
-module_param(ipc, int, S_IRUGO);
-MODULE_PARM_DESC(ipc, "IPC mechanism for communicating with user-space CCP.\n0: netlink (default), 1: chardev /dev/ccpkp");
-
 
 void ccp_set_pacing_rate(struct sock *sk, uint32_t rate) {
     sk->sk_pacing_rate = rate;
@@ -231,9 +231,9 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     struct ccp *ca = inet_csk_ca(sk);
     struct ccp_connection *dp = ca->dp;
 
-    if (ipc == IPC_CHARDEV) {
+#if __IPC__ == IPC_CHARDEV
         ccpkp_try_read();
-    }
+#endif
 
     if (dp != NULL) {
         // load primitive registers
@@ -393,46 +393,54 @@ static int __init tcp_ccp_register(void) {
     };
 
     getnstimeofday64(&tzero);
-    if (ipc == IPC_NETLINK) {
-        printk(KERN_INFO "ipc = netlink\n");
-        ok = ccp_nl_sk(&ccp_read_msg);
-        if (ok < 0) {
-            return -1;
-        }
 
-        dp.send_msg = &nl_sendmsg;
-        printk(KERN_INFO "initialized NL successfully\n");
-    } else if (ipc == IPC_CHARDEV) {
-        printk(KERN_INFO "ipc = chardev\n");
-        ok = ccpkp_init(&ccp_read_msg);
-        if (ok < 0) {
-            return -1;
-        }
-        dp.send_msg = &ccpkp_sendmsg;
-    } else {
-        printk(KERN_WARNING "unknown ipc code %d, use: 0=netlink 1=chardev", ipc);
+#if __KERNEL_VERSION_MINOR__ <= 16 && __KERNEL_VERSION_MINOR__ >= 13
+    pr_info("[ccp] Compatibility mode: 4.13 <= kernel version <= 4.16\n");
+#define COMPAT_MODE
+#elif __KERNEL_VERSION_MINOR__ >= 19
+    pr_info("[ccp] Rate-sample mode: 4.13 <= kernel version <= 4.16\n");
+#define RATESAMPLE_MODE
+#endif
+
+#if __IPC__ == IPC_NETLINK
+    ok = ccp_nl_sk(&ccp_read_msg);
+    if (ok < 0) {
         return -1;
     }
+
+    dp.send_msg = &nl_sendmsg;
+    printk(KERN_INFO "[ccp] ipc = netlink\n");
+#elif __IPC__ == IPC_CHARDEV
+    ok = ccpkp_init(&ccp_read_msg);
+    if (ok < 0) {
+        return -1;
+    }
+
+    dp.send_msg = &ccpkp_sendmsg;
+    printk(KERN_INFO "[ccp] ipc = chardev\n");
+#else
+    printk(KERN_WARNING "[ccp] ipc =  %s unknown\n", __IPC__);
+    return -1;
+#endif
 
     ok = ccp_init(&dp);
     if (ok < 0) {
         return -1;
     }
 
-    printk(KERN_INFO "init ccp: %lu\n", sizeof(struct ccp));
+    printk(KERN_INFO "[ccp] init: size %lu\n", sizeof(struct ccp));
     return tcp_register_congestion_control(&tcp_ccp_congestion_ops);
 }
 
 static void __exit tcp_ccp_unregister(void) {
-    printk(KERN_INFO "exit ccp\n");
+    printk(KERN_INFO "[ccp] exit\n");
     ccp_free();
-    if (ipc == IPC_NETLINK) {
-        free_ccp_nl_sk();
-    }
-tcp_unregister_congestion_control(&tcp_ccp_congestion_ops);
-    if (ipc == IPC_CHARDEV) {
-        ccpkp_cleanup();
-    }
+    tcp_unregister_congestion_control(&tcp_ccp_congestion_ops);
+#if __IPC__ == IPC_NETLINK
+    free_ccp_nl_sk();
+#elif __IPC__ == IPC_CHARDEV
+    ccpkp_cleanup();
+#endif
 }
 
 module_init(tcp_ccp_register);
