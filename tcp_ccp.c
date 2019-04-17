@@ -334,9 +334,9 @@ void tcp_ccp_init(struct sock *sk) {
     struct ccp_datapath_info dp = {
         .init_cwnd = tp->snd_cwnd * tp->mss_cache,
         .mss = tp->mss_cache,
-        .src_ip = tp->inet_conn.icsk_inet.inet_rcv_saddr,
-        .src_port = tp->inet_conn.icsk_inet.inet_num,
-        .dst_ip = tp->inet_conn.icsk_inet.inet_saddr,
+        .src_ip = tp->inet_conn.icsk_inet.inet_saddr,
+        .src_port = tp->inet_conn.icsk_inet.inet_sport,
+        .dst_ip = tp->inet_conn.icsk_inet.inet_daddr,
         .dst_port = tp->inet_conn.icsk_inet.inet_dport,
         .congAlg = "reno",
     };
