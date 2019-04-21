@@ -1,11 +1,11 @@
-# Comment/uncomment the following line to disable/enable debugging
+
 DEBUG = n
 ONE_PIPE = n
 IPC = 0 # 0 == netlink, 1 == chardev
 
 # Add your debugging flag (or not) to EXTRA_CFLAGS
 ifeq ($(DEBUG),y)
-  DEBFLAGS = -O1 -g -D__DEBUG__ # "-O" is needed to expand inlines
+  DEBFLAGS = -O1 -g -D__DEBUG__ -D__LOG_DEBUG__ # "-O" is needed to expand inlines
 else
   DEBFLAGS = -Ofast
 endif
@@ -28,9 +28,11 @@ ccp-objs := libccp/serialize.o libccp/ccp_priv.o libccp/machine.o libccp/ccp.o c
 obj-m := $(TARGET).o
 
 all:
-ifneq ($(KERNEL_VERSION_MAJOR),4)
-	$(error "Only kernel version 4 is supported: $(KERNEL_VERSION_MAJOR) $(KERNEL_VERSION_MINOR)")
+ifneq ($(shell expr $(KERNEL_VERSION_MAJOR) \>= 4),1)
+	$(error "Only kernel version >= 4 is supported: $(KERNEL_VERSION_MAJOR) $(KERNEL_VERSION_MINOR)")
 endif 
+ifeq ($(shell expr $(KERNEL_VERSION_MINOR) \>= 4),1)
+endif
 	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(CURDIR) modules
 
 clean:

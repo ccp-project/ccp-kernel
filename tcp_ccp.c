@@ -1,7 +1,7 @@
 #include "tcp_ccp.h"
 #include "libccp/ccp.h"
 
-#if __KERNEL_VERSION_MINOR__ <= 16 && __KERNEL_VERSION_MINOR__ >= 13
+#if __KERNEL_VERSION_MINOR__ <= 14 && __KERNEL_VERSION_MINOR__ >= 13
 #define COMPAT_MODE
 #elif __KERNEL_VERSION_MINOR__ >= 19
 #define RATESAMPLE_MODE
@@ -69,21 +69,6 @@ static void do_set_rate_abs(
     struct sock *sk;
     get_sock_from_ccp(&sk, conn);
     ccp_set_pacing_rate(sk, rate);
-}
-
-static void do_set_rate_rel(
-    struct ccp_datapath *dp,
-    struct ccp_connection *conn, 
-    uint32_t factor
-) {
-    struct sock *sk;
-    uint64_t newrate;
-    get_sock_from_ccp(&sk, conn);
-
-    // factor is * 100
-    newrate = sk->sk_pacing_rate * factor;
-    do_div(newrate, 100);
-    ccp_set_pacing_rate(sk, newrate);
 }
 
 struct timespec64 tzero;
@@ -183,6 +168,7 @@ int load_primitives(struct sock *sk, const struct rate_sample *rs) {
 #ifdef COMPAT_MODE
     // receive rate
     ack_us = tcp_stamp_us_delta(tp->tcp_mstamp, rs->prior_mstamp);
+
     // send rate
     for (i=0; i < MAX_SKB_STORED; i++) {
         if (ca->skb_array[i].first_tx_mstamp == tp->first_tx_mstamp) {
@@ -201,7 +187,6 @@ int load_primitives(struct sock *sk, const struct rate_sample *rs) {
         do_div(rin, snd_us);
         do_div(rout, ack_us);
     }
-
 
     mmt->bytes_acked = tp->bytes_acked - ca->last_bytes_acked;
     ca->last_bytes_acked = tp->bytes_acked;
@@ -226,6 +211,7 @@ int load_primitives(struct sock *sk, const struct rate_sample *rs) {
     if ( rout != 0 ) {
         mmt->rate_incoming = rout;
     }
+
     mmt->bytes_in_flight = tcp_packets_in_flight(tp) * tp->mss_cache;
     mmt->packets_in_flight = tcp_packets_in_flight(tp);
     if (tp->snd_cwnd <= 0) {
@@ -348,7 +334,7 @@ void tcp_ccp_init(struct sock *sk) {
     cpl->last_bytes_acked = tp->bytes_acked;
     cpl->last_sacked_out = tp->sacked_out;
 
-    cpl->skb_array = (struct skb_info*)__MALLOC__(MAX_SKB_STORED * sizeof(struct skb_info));
+    cpl->skb_array = (struct skb_info*)kmalloc(MAX_SKB_STORED * sizeof(struct skb_info), GFP_KERNEL);
     if (!(cpl->skb_array)) {
         pr_info("ccp: could not allocate skb array\n");
     }
@@ -405,7 +391,6 @@ static int __init tcp_ccp_register(void) {
     struct ccp_datapath dp = {
         .set_cwnd = &do_set_cwnd,
         .set_rate_abs = &do_set_rate_abs,
-        .set_rate_rel = &do_set_rate_rel,
         .now = &ccp_now,
         .since_usecs = &ccp_since,
         .after_usecs = &ccp_after
