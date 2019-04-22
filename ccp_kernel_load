@@ -21,6 +21,11 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
+if [ -z "lsmod | grep 'ccp'" ]; then
+    echo "CCP kernel module already loaded"
+    exit 1
+fi
+
 make IPC=$(echo $1 | awk -F'=' '{print $NF}') || exit
 
 # invoke insmod with all arguments we got
