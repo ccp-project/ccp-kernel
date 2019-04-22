@@ -110,7 +110,7 @@ void tcp_ccp_in_ack_event(struct sock *sk, u32 flags) {
 #endif
 
     if (ca->dp == NULL) {
-        pr_info("ccp: ccp_connection not initialized");
+        pr_info("[ccp] ccp_connection not initialized");
         return;
     }
 
@@ -250,7 +250,7 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
         ccp_invoke(dp);
         ca->dp->prims.was_timeout = false;
     } else {
-        pr_info("ccp: ccp_connection not initialized");
+        pr_info("[ccp] ccp_connection not initialized");
     }
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_cong_control);
@@ -276,7 +276,6 @@ void tcp_ccp_pkts_acked(struct sock *sk, const struct ack_sample *sample) {
 
     cpl = inet_csk_ca(sk);
     sampleRTT = sample->rtt_us;
-    //printk(KERN_INFO "pkt sample rtt %d us\n", sampleRTT);
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_pkts_acked);
 
@@ -291,20 +290,14 @@ void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
     struct ccp *cpl = inet_csk_ca(sk);
     switch (new_state) {
         case TCP_CA_Loss:
-            printk(KERN_INFO "entered TCP_CA_Loss (timeout drop)\n");
             if (cpl->dp != NULL) {
                 cpl->dp->prims.was_timeout = true;
             }
             ccp_invoke(cpl->dp);
             return;
         case TCP_CA_Recovery:
-            printk(KERN_INFO "entered TCP_CA_Recovery (dupack drop)\n");
-            break;
         case TCP_CA_CWR:
-            printk(KERN_INFO "entered TCP_CA_CWR (ecn drop)\n");
-            break;
         default:
-            printk(KERN_INFO "entered TCP normal state\n");
             break;
     }
             
@@ -327,7 +320,7 @@ void tcp_ccp_init(struct sock *sk) {
         .congAlg = "reno",
     };
 
-    pr_info("ccp: new flow\n");
+    pr_info("[ccp] new flow\n");
     
     cpl = inet_csk_ca(sk);
     cpl->last_snd_una = tp->snd_una;
@@ -336,15 +329,15 @@ void tcp_ccp_init(struct sock *sk) {
 
     cpl->skb_array = (struct skb_info*)kmalloc(MAX_SKB_STORED * sizeof(struct skb_info), GFP_KERNEL);
     if (!(cpl->skb_array)) {
-        pr_info("ccp: could not allocate skb array\n");
+        pr_info("[ccp] could not allocate skb array\n");
     }
     memset(cpl->skb_array, 0, MAX_SKB_STORED * sizeof(struct skb_info));
 
     cpl->dp = ccp_connection_start((void *) sk, &dp);
     if (cpl->dp == NULL) {
-        pr_info("ccp: start connection failed\n");
+        pr_info("[ccp] start connection failed\n");
     } else {
-        pr_info("ccp: starting connection %d", cpl->dp->index);
+        pr_info("[ccp] starting connection %d", cpl->dp->index);
     }
 
     // if no ecn support
@@ -359,10 +352,10 @@ EXPORT_SYMBOL_GPL(tcp_ccp_init);
 void tcp_ccp_release(struct sock *sk) {
     struct ccp *cpl = inet_csk_ca(sk);
     if (cpl->dp != NULL) {
-        pr_info("ccp: freeing connection %d", cpl->dp->index);
+        pr_info("[ccp] freeing connection %d", cpl->dp->index);
         ccp_connection_free(cpl->dp->index);
     } else {
-        pr_info("ccp: already freed");
+        pr_info("[ccp] already freed");
     }
     if (cpl->skb_array != NULL) {
         kfree(cpl->skb_array);
@@ -386,6 +379,18 @@ struct tcp_congestion_ops tcp_ccp_congestion_ops = {
     .pkts_acked = tcp_ccp_pkts_acked
 };
 
+void ccp_log(struct ccp_datapath *dp, enum ccp_log_level level, const char* msg, int msg_size) {
+    switch(level) {
+    case ERROR:
+    case WARN:
+    case INFO:
+        pr_info("%s\n", msg);
+        break;
+    default:
+        break;
+    }
+}
+
 static int __init tcp_ccp_register(void) {
     int ok;
     struct ccp_datapath dp = {
@@ -393,7 +398,8 @@ static int __init tcp_ccp_register(void) {
         .set_rate_abs = &do_set_rate_abs,
         .now = &ccp_now,
         .since_usecs = &ccp_since,
-        .after_usecs = &ccp_after
+        .after_usecs = &ccp_after,
+        .log = &ccp_log,
     };
 
     getnstimeofday64(&tzero);
@@ -412,7 +418,7 @@ static int __init tcp_ccp_register(void) {
     }
 
     dp.send_msg = &nl_sendmsg;
-    printk(KERN_INFO "[ccp] ipc = netlink\n");
+    pr_info("[ccp] ipc = netlink\n");
 #elif __IPC__ == IPC_CHARDEV
     ok = ccpkp_init(&ccp_read_msg);
     if (ok < 0) {
@@ -420,9 +426,9 @@ static int __init tcp_ccp_register(void) {
     }
 
     dp.send_msg = &ccpkp_sendmsg;
-    printk(KERN_INFO "[ccp] ipc = chardev\n");
+    pr_info("[ccp] ipc = chardev\n");
 #else
-    printk(KERN_WARNING "[ccp] ipc =  %s unknown\n", __IPC__);
+    pr_info("[ccp] ipc =  %s unknown\n", __IPC__);
     return -1;
 #endif
 
@@ -431,12 +437,12 @@ static int __init tcp_ccp_register(void) {
         return -1;
     }
 
-    printk(KERN_INFO "[ccp] init: size %lu\n", sizeof(struct ccp));
+    pr_info("[ccp] init: size %lu\n", sizeof(struct ccp));
     return tcp_register_congestion_control(&tcp_ccp_congestion_ops);
 }
 
 static void __exit tcp_ccp_unregister(void) {
-    printk(KERN_INFO "[ccp] exit\n");
+    pr_info("[ccp] exit\n");
     ccp_free();
     tcp_unregister_congestion_control(&tcp_ccp_congestion_ops);
 #if __IPC__ == IPC_NETLINK
