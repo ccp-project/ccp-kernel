@@ -199,6 +199,10 @@ int nl_send_drop_notif(
  * -----------------------------------------------------------------------------
  */
 
+struct skb_info {
+    u64 first_tx_mstamp; // choose the correct skb so the timestamp for first packet
+    u32 interval_us; // interval us as calculated from this SKB
+};
 struct ccp {
     // control
     u32 rate;
@@ -214,6 +218,10 @@ struct ccp {
 	u64 prev_rin;
 	u64 prev_rout;
 	u32 prev_mmt_time;
+
+		//rate sample compat mode
+    struct skb_info *skb_array; // array of future skb information
+
     // communication
     uint16_t ccp_index;
 };

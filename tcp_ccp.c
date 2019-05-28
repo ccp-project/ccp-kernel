@@ -1,7 +1,19 @@
 #include <linux/module.h>
 #include <net/tcp.h>
+#include <generated/utsrelease.h>
+
 
 #include "tcp_ccp.h"
+
+#if __KERNEL_VERSION_MINOR__ <= 14 && __KERNEL_VERSION_MINOR__ >= 13
+#define COMPAT_MODE
+#elif __KERNEL_VERSION_MINOR__ >= 19
+#define RATESAMPLE_MODE
+#endif
+
+#define COMPAT_MODE
+#define MAX_SKB_STORED 50
+
 
 #define CCP_FRAC_DENOM 10
 #define CCP_EWMA_RECENCY 6
@@ -27,10 +39,13 @@ static int rate_sample_valid(const struct rate_sample *rs)
   int ret = 0;
   if (rs->delivered <= 0)
     ret |= 1;
+#ifdef COMPAT_MODE
+#else
   if (rs->snd_int_us <= 0)
     ret |= 1 << 1;
   if (rs->rcv_int_us <= 0)
     ret |= 1 << 2;
+#endif
   if (rs->interval_us <= 0)
     ret |= 1 << 3;
   if (rs->rtt_us <= 0)
@@ -47,6 +62,35 @@ static u64 ewma(u64 old, u64 new) {
         (old * (CCP_FRAC_DENOM-CCP_EWMA_RECENCY))) / CCP_FRAC_DENOM;
 }
 
+void tcp_ccp_in_ack_event(struct sock *sk, u32 flags) {
+    // according to tcp_input, in_ack_event is called before cong_control, so mmt.ack has old ack value
+    const struct tcp_sock *tp = tcp_sk(sk);
+    struct ccp *ca = inet_csk_ca(sk);
+    u32 acked_bytes;
+#ifdef COMPAT_MODE
+    int i=0;
+    struct sk_buff *skb = tcp_write_queue_head(sk);
+    struct tcp_skb_cb *scb;
+#endif
+
+#ifdef COMPAT_MODE
+    for (i=0; i < MAX_SKB_STORED; i++) {
+        ca->skb_array[i].first_tx_mstamp = 0;
+        ca->skb_array[i].interval_us = 0;
+    }
+
+    for (i=0; i < MAX_SKB_STORED; i++) {
+        if (skb) {
+            scb = TCP_SKB_CB(skb);
+            ca->skb_array[i].first_tx_mstamp = skb->skb_mstamp;
+            ca->skb_array[i].interval_us = tcp_stamp_us_delta(skb->skb_mstamp, scb->tx.first_tx_mstamp);
+            skb = skb->next;
+        }
+    }
+#endif
+}
+EXPORT_SYMBOL_GPL(tcp_ccp_in_ack_event);
+
 void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     // aggregate measurement
     // state = fold(state, rs)
@@ -60,23 +104,52 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
         .rin = 0, /* send bandwidth in bytes per second */
         .rout = 0, /* recv bandwidth in bytes per second */
     };
+#ifdef COMPAT_MODE
+    int i=0;
+#endif
+		u64 ack_us = 0;
+		u64 snd_us = 0;
+		u64 rin = 0;
+		u64 rout = 0;
 
     int measured_valid_rate = rate_sample_valid(rs);
-    if (measured_valid_rate == 0) {
-        curr_mmt.rin = curr_mmt.rout = (u64)rs->delivered * MTU * S_TO_US;
-        do_div(curr_mmt.rin, rs->snd_int_us);
-        do_div(curr_mmt.rout, rs->rcv_int_us);
-    } else {
+    if ( measured_valid_rate != 0 ) {
         return;
     }
 
     u32 curr_time = tcp_jiffies32;
 
+#ifdef COMPAT_MODE
+    // receive rate
+    ack_us = tcp_stamp_us_delta(tp->tcp_mstamp, rs->prior_mstamp);
+
+    // send rate
+    for (i=0; i < MAX_SKB_STORED; i++) {
+        if (ca->skb_array[i].first_tx_mstamp == tp->first_tx_mstamp) {
+            snd_us = ca->skb_array[i].interval_us;
+            break;
+        }
+    }
+#else
+		snd_us = rs->snd_int_us;
+		ack_us = rs->rcv_int_us;
+
     if (curr_time>ca->prev_mmt_time) {
         ca->mmt.rin = ewma(ca->mmt.rin, ca->prev_rin);
         ca->mmt.rout = ewma(ca->mmt.rout, ca->prev_rout);
     }
+#endif
     ca->prev_mmt_time = curr_time;
+
+    if (ack_us != 0 && snd_us != 0) {
+        rin = rout = (u64)rs->delivered * MTU * S_TO_US;
+        do_div(rin, snd_us);
+        do_div(rout, ack_us);
+    }
+		ca->mmt.rin = rin;
+		ca->mmt.rout = rout;
+		
+
 	
 	//pr_info("new measurement: ack %u, rtt %u, rin %llu, rout %llu, time %u\n", 
     //        curr_mmt.ack,
@@ -185,6 +258,14 @@ void tcp_ccp_init(struct sock *sk) {
     cpl = inet_csk_ca(sk);
     cpl->ccp_index = ccp_connection_start(sk);
     pr_info("ccp: starting connection %d", cpl->ccp_index);
+
+#ifdef COMPAT_MODE
+    cpl->skb_array = (struct skb_info*)kmalloc(MAX_SKB_STORED * sizeof(struct skb_info), GFP_KERNEL);
+    if (!(cpl->skb_array)) {
+        pr_info("[ccp] could not allocate skb array\n");
+    }
+    memset(cpl->skb_array, 0, MAX_SKB_STORED * sizeof(struct skb_info));
+#endif
     
     cpl->next_event_time = tcp_jiffies32;
     cpl->currPatternEvent = 0;
@@ -216,6 +297,7 @@ EXPORT_SYMBOL_GPL(tcp_ccp_release);
 
 struct tcp_congestion_ops tcp_ccp_congestion_ops = {
     .flags = TCP_CONG_NON_RESTRICTED,
+		.in_ack_event = tcp_ccp_in_ack_event,
     .name = "ccp",
     .owner = THIS_MODULE,
     .init = tcp_ccp_init,
@@ -240,6 +322,10 @@ static int __init tcp_ccp_register(void) {
     if (ok < 0) {
         return -1;
     }
+
+#ifdef COMPAT_MODE
+    pr_info("[ccp] Compatibility mode: 4.13 <= kernel version <= 4.16\n");
+#endif
 
     nl_sk = netlink_kernel_create(&init_net, NETLINK_USERSOCK, &cfg);
     if (!nl_sk) {
