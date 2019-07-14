@@ -5,6 +5,7 @@
 
 ccp_nl_recv_handler ccp_msg_reader = NULL;
 struct sock *nl_sk;
+extern struct ccp_datapath *kernel_datapath;
 
 // callback from userspace ccp
 // all messages will be PatternMsg OR InstallFoldMsg
@@ -23,7 +24,7 @@ void nl_recv(struct sk_buff *skb) {
     //}
     //printk(KERN_INFO "]\n");
 
-    ok = ccp_msg_reader((char*)nlmsg_data(nlh), nlh->nlmsg_len);
+    ok = ccp_msg_reader(kernel_datapath, (char*)nlmsg_data(nlh), nlh->nlmsg_len);
     if (ok < 0) {
         pr_info("message read failed: %d.\n", ok);
     }
@@ -50,7 +51,6 @@ void free_ccp_nl_sk(void) {
 
 // send IPC message to userspace ccp
 int nl_sendmsg(
-    struct ccp_datapath *dp,
     struct ccp_connection *conn,
     char *msg, 
     int msg_size

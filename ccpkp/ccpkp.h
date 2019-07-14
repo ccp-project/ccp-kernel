@@ -31,7 +31,7 @@ ssize_t     ccpkp_user_read(struct file *fp, char *buf, size_t bytes_to_read, lo
 void        ccpkp_try_read(void);
 ssize_t     ccpkp_kernel_read(struct kpipe *pipe, char *buf, size_t bytes_to_read);
 ssize_t     ccpkp_user_write(struct file *fp, const char *buf, size_t bytes_to_write, loff_t *offset);
-int         ccpkp_sendmsg(struct ccp_datapath *dp, struct ccp_connection *conn, char *buf, int bytes_to_write);
+int         ccpkp_sendmsg(struct ccp_connection *conn, char *buf, int bytes_to_write);
 ssize_t     ccpkp_kernel_write(struct kpipe *pipe, const char *buf, size_t bytes_to_read, int id);
 int         ccpkp_user_release(struct inode *, struct file *);
 void        ccpkp_cleanup(void);

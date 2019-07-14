@@ -8,7 +8,7 @@
 
 #include "libccp/ccp.h"
 
-typedef int (*ccp_nl_recv_handler)(char *msg, int msg_size);
+typedef int (*ccp_nl_recv_handler)(struct ccp_datapath *datapath, char *msg, int msg_size);
 
 /* Create a netlink kernel socket
  * A global (struct sock*), ccp_nl_sk, will get set so we can use the socket
@@ -23,7 +23,6 @@ void free_ccp_nl_sk(void);
 /* Send serialized message to userspace CCP
  */
 int nl_sendmsg(
-    struct ccp_datapath *dp,
     struct ccp_connection *conn,
     char *msg, 
     int msg_size

@@ -7,6 +7,9 @@
 
 #define MAX_SKB_STORED 50
 
+#define MAX_ACTIVE_FLOWS 1024
+#define MAX_DATAPATH_PROGRAMS 10
+
 struct skb_info {
     u64 first_tx_mstamp; // choose the correct skb so the timestamp for first packet
     u32 interval_us; // interval us as calculated from this SKB
@@ -20,7 +23,7 @@ struct ccp {
     struct skb_info *skb_array; // array of future skb information
 
     // communication
-    struct ccp_connection *dp;
+    struct ccp_connection *conn;
 };
 
 #define MTU 1500

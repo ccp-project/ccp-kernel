@@ -1,5 +1,6 @@
 #include "tcp_ccp.h"
 #include "libccp/ccp.h"
+#include "libccp/ccp_priv.h"
 
 #if __KERNEL_VERSION_MINOR__ <= 14 && __KERNEL_VERSION_MINOR__ >= 13
 #define COMPAT_MODE
@@ -24,6 +25,9 @@
 #define CCP_FRAC_DENOM 10
 #define CCP_EWMA_RECENCY 6
 
+// Global internal state -- allocated during ccp_init and freed in ccp_free.
+struct ccp_datapath *kernel_datapath;
+
 void ccp_set_pacing_rate(struct sock *sk, uint32_t rate) {
     sk->sk_pacing_rate = rate;
 }
@@ -47,7 +51,6 @@ static inline void get_sock_from_ccp(
 }
 
 static void do_set_cwnd(
-    struct ccp_datapath *dp,
     struct ccp_connection *conn, 
     uint32_t cwnd
 ) {
@@ -62,7 +65,6 @@ static void do_set_cwnd(
 }
 
 static void do_set_rate_abs(
-    struct ccp_datapath *dp,
     struct ccp_connection *conn, 
     uint32_t rate
 ) {
@@ -109,7 +111,7 @@ void tcp_ccp_in_ack_event(struct sock *sk, u32 flags) {
     struct tcp_skb_cb *scb;
 #endif
 
-    if (ca->dp == NULL) {
+    if (ca->conn == NULL) {
         pr_info("[ccp] ccp_connection not initialized");
         return;
     }
@@ -130,7 +132,7 @@ void tcp_ccp_in_ack_event(struct sock *sk, u32 flags) {
     }
 #endif
     
-    mmt = &ca->dp->prims;
+    mmt = &ca->conn->prims;
     acked_bytes = tp->snd_una - ca->last_snd_una;
     ca->last_snd_una = tp->snd_una;
     if (acked_bytes) {
@@ -151,7 +153,7 @@ EXPORT_SYMBOL_GPL(tcp_ccp_in_ack_event);
 int load_primitives(struct sock *sk, const struct rate_sample *rs) {
     struct tcp_sock *tp = tcp_sk(sk);
     struct ccp *ca = inet_csk_ca(sk);
-    struct ccp_primitives *mmt = &ca->dp->prims;
+    struct ccp_primitives *mmt = &ca->conn->prims;
 #ifdef COMPAT_MODE
     int i=0;
 #endif
@@ -234,21 +236,21 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     // state = fold(state, rs)
     int ok;
     struct ccp *ca = inet_csk_ca(sk);
-    struct ccp_connection *dp = ca->dp;
+    struct ccp_connection *conn = ca->conn;
 
 #if __IPC__ == IPC_CHARDEV
         ccpkp_try_read();
 #endif
 
-    if (dp != NULL) {
+    if (conn != NULL) {
         // load primitive registers
         ok = load_primitives(sk, rs);
         if (ok < 0) {
             return;
         }
 
-        ccp_invoke(dp);
-        ca->dp->prims.was_timeout = false;
+        ccp_invoke(conn);
+        ca->conn->prims.was_timeout = false;
     } else {
         pr_info("[ccp] ccp_connection not initialized");
     }
@@ -290,10 +292,10 @@ void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
     struct ccp *cpl = inet_csk_ca(sk);
     switch (new_state) {
         case TCP_CA_Loss:
-            if (cpl->dp != NULL) {
-                cpl->dp->prims.was_timeout = true;
+            if (cpl->conn != NULL) {
+                cpl->conn->prims.was_timeout = true;
             }
-            ccp_invoke(cpl->dp);
+            ccp_invoke(cpl->conn);
             return;
         case TCP_CA_Recovery:
         case TCP_CA_CWR:
@@ -301,8 +303,8 @@ void tcp_ccp_set_state(struct sock *sk, u8 new_state) {
             break;
     }
             
-    if (cpl->dp != NULL) {
-        cpl->dp->prims.was_timeout = false;
+    if (cpl->conn != NULL) {
+        cpl->conn->prims.was_timeout = false;
     }
 }
 EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
@@ -310,7 +312,7 @@ EXPORT_SYMBOL_GPL(tcp_ccp_set_state);
 void tcp_ccp_init(struct sock *sk) {
     struct ccp *cpl;
     struct tcp_sock *tp = tcp_sk(sk);
-    struct ccp_datapath_info dp = {
+    struct ccp_datapath_info dp_info = {
         .init_cwnd = tp->snd_cwnd * tp->mss_cache,
         .mss = tp->mss_cache,
         .src_ip = tp->inet_conn.icsk_inet.inet_saddr,
@@ -333,11 +335,11 @@ void tcp_ccp_init(struct sock *sk) {
     }
     memset(cpl->skb_array, 0, MAX_SKB_STORED * sizeof(struct skb_info));
 
-    cpl->dp = ccp_connection_start((void *) sk, &dp);
-    if (cpl->dp == NULL) {
+    cpl->conn = ccp_connection_start(kernel_datapath, (void *) sk, &dp_info);
+    if (cpl->conn == NULL) {
         pr_info("[ccp] start connection failed\n");
     } else {
-        pr_info("[ccp] starting connection %d", cpl->dp->index);
+        pr_info("[ccp] starting connection %d", cpl->conn->index);
     }
 
     // if no ecn support
@@ -351,9 +353,9 @@ EXPORT_SYMBOL_GPL(tcp_ccp_init);
 
 void tcp_ccp_release(struct sock *sk) {
     struct ccp *cpl = inet_csk_ca(sk);
-    if (cpl->dp != NULL) {
-        pr_info("[ccp] freeing connection %d", cpl->dp->index);
-        ccp_connection_free(cpl->dp->index);
+    if (cpl->conn != NULL) {
+        pr_info("[ccp] freeing connection %d", cpl->conn->index);
+        ccp_connection_free(kernel_datapath, cpl->conn->index);
     } else {
         pr_info("[ccp] already freed");
     }
@@ -393,14 +395,6 @@ void ccp_log(struct ccp_datapath *dp, enum ccp_log_level level, const char* msg,
 
 static int __init tcp_ccp_register(void) {
     int ok;
-    struct ccp_datapath dp = {
-        .set_cwnd = &do_set_cwnd,
-        .set_rate_abs = &do_set_rate_abs,
-        .now = &ccp_now,
-        .since_usecs = &ccp_since,
-        .after_usecs = &ccp_after,
-        .log = &ccp_log,
-    };
 
     getnstimeofday64(&tzero);
 
@@ -411,39 +405,65 @@ static int __init tcp_ccp_register(void) {
     pr_info("[ccp] Rate-sample mode: 4.19 <= kernel version\n");
 #endif
 
+    kernel_datapath = kmalloc(sizeof(struct ccp_datapath), GFP_KERNEL);
+    if(!kernel_datapath) {
+        pr_info("[ccp] could not allocate ccp_datapath\n");
+        return -4;
+    }
+    kernel_datapath->max_connections = MAX_ACTIVE_FLOWS;
+    kernel_datapath->ccp_active_connections =
+        (struct ccp_connection *) kmalloc(sizeof(struct ccp_connection) * MAX_ACTIVE_FLOWS, GFP_KERNEL);
+    if(!kernel_datapath->ccp_active_connections) {
+        pr_info("[ccp] could not allocate ccp_active_connections\n");
+        return -5;
+    }
+    kernel_datapath->max_programs = MAX_DATAPATH_PROGRAMS;
+    kernel_datapath->programs =
+        (struct DatapathProgram *) kmalloc(sizeof(struct DatapathProgram) * MAX_DATAPATH_PROGRAMS, GFP_KERNEL);
+    if(!kernel_datapath->programs) {
+        pr_info("[ccp] could not allocate list of datapath programs\n");
+        return -5;
+    }
+    kernel_datapath->set_cwnd = &do_set_cwnd;
+    kernel_datapath->set_rate_abs = &do_set_rate_abs;
+    kernel_datapath->now = &ccp_now;
+    kernel_datapath->since_usecs = &ccp_since;
+    kernel_datapath->after_usecs = &ccp_after;
+    kernel_datapath->log = &ccp_log;
 #if __IPC__ == IPC_NETLINK
     ok = ccp_nl_sk(&ccp_read_msg);
     if (ok < 0) {
         return -1;
     }
 
-    dp.send_msg = &nl_sendmsg;
+    kernel_datapath->send_msg = &nl_sendmsg;
     pr_info("[ccp] ipc = netlink\n");
 #elif __IPC__ == IPC_CHARDEV
     ok = ccpkp_init(&ccp_read_msg);
     if (ok < 0) {
-        return -1;
+        return -2;
     }
 
-    dp.send_msg = &ccpkp_sendmsg;
+    kernel_datapath->send_msg = &ccpkp_sendmsg;
     pr_info("[ccp] ipc = chardev\n");
 #else
     pr_info("[ccp] ipc =  %s unknown\n", __IPC__);
-    return -1;
+    return -3;
 #endif
 
-    ok = ccp_init(&dp);
+	
+    ok = ccp_init(kernel_datapath);
     if (ok < 0) {
-        return -1;
+        return -6;
     }
 
-    pr_info("[ccp] init: size %lu\n", sizeof(struct ccp));
+    pr_info("[ccp] init\n");
     return tcp_register_congestion_control(&tcp_ccp_congestion_ops);
 }
 
 static void __exit tcp_ccp_unregister(void) {
     pr_info("[ccp] exit\n");
-    ccp_free();
+    ccp_free(kernel_datapath);
     tcp_unregister_congestion_control(&tcp_ccp_congestion_ops);
 #if __IPC__ == IPC_NETLINK
     free_ccp_nl_sk();

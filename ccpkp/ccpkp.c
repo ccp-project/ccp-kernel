@@ -239,7 +239,6 @@ void ccpkp_try_read(void) {
 }
 
 int ccpkp_sendmsg(
-        struct ccp_datapath *dp,
         struct ccp_connection *conn,
         char *buf,
         int bytes_to_write
