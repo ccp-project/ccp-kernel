@@ -450,7 +450,6 @@ static int __init tcp_ccp_register(void) {
     pr_info("[ccp] ipc =  %s unknown\n", __IPC__);
     return -3;
 #endif
-
 	
     ok = ccp_init(kernel_datapath);
     if (ok < 0) {
@@ -462,14 +461,16 @@ static int __init tcp_ccp_register(void) {
 }
 
 static void __exit tcp_ccp_unregister(void) {
-    pr_info("[ccp] exit\n");
-    ccp_free(kernel_datapath);
     tcp_unregister_congestion_control(&tcp_ccp_congestion_ops);
 #if __IPC__ == IPC_NETLINK
     free_ccp_nl_sk();
 #elif __IPC__ == IPC_CHARDEV
     ccpkp_cleanup();
 #endif
+    kfree(kernel_datapath->programs);
+    kfree(kernel_datapath->ccp_active_connections);
+    kfree(kernel_datapath);
+    pr_info("[ccp] exit\n");
 }
 
 module_init(tcp_ccp_register);
