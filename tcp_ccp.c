@@ -1,6 +1,5 @@
 #include "tcp_ccp.h"
 #include "libccp/ccp.h"
-#include "libccp/ccp_priv.h"
 
 #if __KERNEL_VERSION_MINOR__ <= 14 && __KERNEL_VERSION_MINOR__ >= 13
 #define COMPAT_MODE
@@ -410,6 +409,7 @@ static int __init tcp_ccp_register(void) {
         pr_info("[ccp] could not allocate ccp_datapath\n");
         return -4;
     }
+
     kernel_datapath->max_connections = MAX_ACTIVE_FLOWS;
     kernel_datapath->ccp_active_connections =
         (struct ccp_connection *) kmalloc(sizeof(struct ccp_connection) * MAX_ACTIVE_FLOWS, GFP_KERNEL);
@@ -417,13 +417,8 @@ static int __init tcp_ccp_register(void) {
         pr_info("[ccp] could not allocate ccp_active_connections\n");
         return -5;
     }
+
     kernel_datapath->max_programs = MAX_DATAPATH_PROGRAMS;
-    kernel_datapath->programs =
-        (struct DatapathProgram *) kmalloc(sizeof(struct DatapathProgram) * MAX_DATAPATH_PROGRAMS, GFP_KERNEL);
-    if(!kernel_datapath->programs) {
-        pr_info("[ccp] could not allocate list of datapath programs\n");
-        return -5;
-    }
     kernel_datapath->set_cwnd = &do_set_cwnd;
     kernel_datapath->set_rate_abs = &do_set_rate_abs;
     kernel_datapath->now = &ccp_now;
@@ -467,7 +462,6 @@ static void __exit tcp_ccp_unregister(void) {
 #elif __IPC__ == IPC_CHARDEV
     ccpkp_cleanup();
 #endif
-    kfree(kernel_datapath->programs);
     kfree(kernel_datapath->ccp_active_connections);
     kfree(kernel_datapath);
     pr_info("[ccp] exit\n");
