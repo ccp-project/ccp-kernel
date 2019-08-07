@@ -8,6 +8,6 @@ please see our [guide](https://ccp-project.github.io/guide).
 
 ## Notes
 
-- We support Linux kernel versions 4.13 to 4.16. For later kernel versions,
-you may be interested in [our patch](https://github.com/ngsrinivas/linux-fork/),
-which [is being upstreamed](https://patchwork.ozlabs.org/patch/941532/).
+- We support Linux kernel versions 4.19+ (i.e., after [our patch](https://patchwork.ozlabs.org/patch/941532/)).
+- For kernel 4.13 and 4.14, we additionally provide a compatibility mode to allow use with unmodified kernels.
+- For other kernel versions, we suggest manually applying the patch and compiling your own kernel.
