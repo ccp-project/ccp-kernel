@@ -3,7 +3,7 @@
 This repository is a Linux kernel module that allows the Linux kernel to be used as a CCP datapath.
 
 For instructions on building this module and running CCP, 
-please see our [guide](https://ccp-project.github.io/guide).
+please see our [guide](https://ccp-project.github.io/ccp-guide).
 
 
 ## Notes
