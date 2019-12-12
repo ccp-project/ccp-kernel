@@ -385,6 +385,8 @@ void ccp_log(struct ccp_datapath *dp, enum ccp_log_level level, const char* msg,
     case ERROR:
     case WARN:
     case INFO:
+    case DEBUG:
+    case TRACE:
         pr_info("%s\n", msg);
         break;
     default:
