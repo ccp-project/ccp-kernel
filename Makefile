@@ -12,6 +12,7 @@ endif
 
 KERNEL_VERSION_MAJOR := $(shell uname -r | awk -F '.' '{print $$1}')
 KERNEL_VERSION_MINOR := $(shell uname -r | awk -F '.' '{print $$2}')
+EXTRA_CFLAGS += -D__KERNEL_VERSION_MAJOR__=$(KERNEL_VERSION_MAJOR) 
 EXTRA_CFLAGS += -D__KERNEL_VERSION_MINOR__=$(KERNEL_VERSION_MINOR)
 EXTRA_CFLAGS += -D__IPC__=$(IPC)
 

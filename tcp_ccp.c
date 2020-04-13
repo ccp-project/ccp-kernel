@@ -3,7 +3,9 @@
 
 #if __KERNEL_VERSION_MINOR__ <= 14 && __KERNEL_VERSION_MINOR__ >= 13
 #define COMPAT_MODE
-#elif __KERNEL_VERSION_MINOR__ >= 19
+#elif __KERNEL_VERSION_MAJOR__ > 4
+#define RATESAMPLE_MODE
+#elif __KERNEL_VERSION_MAJOR__ == 4 && __KERNEL_VERSION_MINOR__ >= 19
 #define RATESAMPLE_MODE
 #endif
 
@@ -75,14 +77,14 @@ static void do_set_rate_abs(
 struct timespec64 tzero;
 static u64 ccp_now(void) {
     struct timespec64 now, diff;
-    getnstimeofday64(&now);
+    ktime_get_real_ts64(&now);
     diff = timespec64_sub(now, tzero);
     return timespec64_to_ns(&diff);
 }
 
 static u64 ccp_since(u64 then) {
     struct timespec64 now, then_ts, diff;
-    getnstimeofday64(&now);
+    ktime_get_real_ts64(&now);
     then_ts = tzero;
     timespec64_add_ns(&then_ts, then);
     diff = timespec64_sub(now, then_ts);
@@ -91,7 +93,7 @@ static u64 ccp_since(u64 then) {
 
 static u64 ccp_after(u64 us) {
     struct timespec64 now;
-    getnstimeofday64(&now);
+    ktime_get_real_ts64(&now);
     now = timespec64_sub(now, tzero);
     timespec64_add_ns(&now, us * NSEC_PER_USEC);
     return timespec64_to_ns(&now);
@@ -397,7 +399,7 @@ void ccp_log(struct ccp_datapath *dp, enum ccp_log_level level, const char* msg,
 static int __init tcp_ccp_register(void) {
     int ok;
 
-    getnstimeofday64(&tzero);
+    ktime_get_real_ts64(&tzero);
 
 #ifdef COMPAT_MODE
     pr_info("[ccp] Compatibility mode: 4.13 <= kernel version <= 4.16\n");
