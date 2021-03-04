@@ -1,5 +1,6 @@
 #include "tcp_ccp.h"
 #include "libccp/ccp.h"
+#include "libccp/ccp_error.h"
 
 #if __KERNEL_VERSION_MINOR__ <= 14 && __KERNEL_VERSION_MINOR__ >= 13
 #define COMPAT_MODE
@@ -250,7 +251,12 @@ void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
             return;
         }
 
-        ccp_invoke(conn);
+        ok = ccp_invoke(conn);
+        if (ok == LIBCCP_FALLBACK_TIMED_OUT) {
+          pr_info("[ccp] libccp fallback timed out");
+          // TODO default to cubic?
+        }
+
         ca->conn->prims.was_timeout = false;
     } else {
         pr_info("[ccp] ccp_connection not initialized");
@@ -429,6 +435,7 @@ static int __init tcp_ccp_register(void) {
     kernel_datapath->since_usecs = &ccp_since;
     kernel_datapath->after_usecs = &ccp_after;
     kernel_datapath->log = &ccp_log;
+    kernel_datapath->fto_us = 1000;
 #if __IPC__ == IPC_NETLINK
     ok = ccp_nl_sk(&ccp_read_msg);
     if (ok < 0) {
