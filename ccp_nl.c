@@ -14,7 +14,7 @@ void nl_recv(struct sk_buff *skb) {
     int ok;
     struct nlmsghdr *nlh = nlmsg_hdr(skb);
     if (ccp_msg_reader == NULL) {
-        pr_info("ccp_msg_reader not ready\n");
+        pr_info("[ccp] [nl] ccp_msg_reader not ready\n");
         return;
     }
     
@@ -26,7 +26,7 @@ void nl_recv(struct sk_buff *skb) {
 
     ok = ccp_msg_reader(kernel_datapath, (char*)nlmsg_data(nlh), nlh->nlmsg_len);
     if (ok < 0) {
-        pr_info("message read failed: %d.\n", ok);
+        pr_info("[ccp] [nl] message read failed: %d.\n", ok);
     }
 }
 
@@ -38,7 +38,7 @@ int ccp_nl_sk(ccp_nl_recv_handler msg) {
     ccp_msg_reader = msg;
     nl_sk = netlink_kernel_create(&init_net, NETLINK_USERSOCK, &cfg);
     if (!nl_sk) {
-        printk(KERN_ALERT "Error creating netlink socket.\n");
+        printk(KERN_ALERT "[ccp] [nl] Error creating netlink socket.\n");
         return -1;
     }
 
@@ -66,7 +66,7 @@ int nl_sendmsg(
         GFP_NOWAIT // @flags: the type of memory to allocate.
     );
     if (!skb_out) {
-        printk(KERN_ERR "Failed to allocate new skb\n");
+        printk(KERN_ERR "[ccp] [nl] Failed to allocate new skb\n");
         return -1;
     }
 

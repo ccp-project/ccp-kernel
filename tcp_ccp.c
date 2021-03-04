@@ -452,6 +452,12 @@ static int __init tcp_ccp_register(void) {
 	
     ok = ccp_init(kernel_datapath);
     if (ok < 0) {
+        pr_info("[ccp] ccp_init failed: %d\n", ok);
+#if __IPC__ == IPC_NETLINK
+        free_ccp_nl_sk();
+#elif __IPC__ == IPC_CHARDEV
+        ccpkp_cleanup();
+#endif
         return -6;
     }
 
