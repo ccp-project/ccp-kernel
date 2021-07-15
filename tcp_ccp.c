@@ -457,7 +457,7 @@ static int __init tcp_ccp_register(void) {
     return -3;
 #endif
 	
-    ok = ccp_init(kernel_datapath);
+    ok = ccp_init(kernel_datapath, 0);
     if (ok < 0) {
         pr_info("[ccp] ccp_init failed: %d\n", ok);
 #if __IPC__ == IPC_NETLINK

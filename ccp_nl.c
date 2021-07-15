@@ -51,7 +51,7 @@ void free_ccp_nl_sk(void) {
 
 // send IPC message to userspace ccp
 int nl_sendmsg(
-    struct ccp_connection *conn,
+    struct ccp_datapath *dp,
     char *msg, 
     int msg_size
 ) {
