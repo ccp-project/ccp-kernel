@@ -421,8 +421,9 @@ static int __init tcp_ccp_register(void) {
     }
 
     kernel_datapath->max_connections = MAX_ACTIVE_FLOWS;
+    // initializes ccp_active_connections to zeros to support the availability check using index == 0 in ccp_connection_start()
     kernel_datapath->ccp_active_connections =
-        (struct ccp_connection *) kmalloc(sizeof(struct ccp_connection) * MAX_ACTIVE_FLOWS, GFP_KERNEL);
+        (struct ccp_connection *) kzalloc(sizeof(struct ccp_connection) * MAX_ACTIVE_FLOWS, GFP_KERNEL);
     if(!kernel_datapath->ccp_active_connections) {
         pr_info("[ccp] could not allocate ccp_active_connections\n");
         return -5;
