@@ -2,14 +2,6 @@
 #include "libccp/ccp.h"
 #include "libccp/ccp_error.h"
 
-#if __KERNEL_VERSION_MINOR__ <= 14 && __KERNEL_VERSION_MINOR__ >= 13
-#define COMPAT_MODE
-#elif __KERNEL_VERSION_MAJOR__ > 4
-#define RATESAMPLE_MODE
-#elif __KERNEL_VERSION_MAJOR__ == 4 && __KERNEL_VERSION_MINOR__ >= 19
-#define RATESAMPLE_MODE
-#endif
-
 #define IPC_NETLINK 0
 #define IPC_CHARDEV 1
 
@@ -107,33 +99,12 @@ void tcp_ccp_in_ack_event(struct sock *sk, u32 flags) {
     struct ccp *ca = inet_csk_ca(sk);
     struct ccp_primitives *mmt;
     u32 acked_bytes;
-#ifdef COMPAT_MODE
-    int i=0;
-    struct sk_buff *skb = tcp_write_queue_head(sk);
-    struct tcp_skb_cb *scb;
-#endif
 
     if (ca->conn == NULL) {
         pr_info("[ccp] ccp_connection not initialized");
         return;
     }
 
-#ifdef COMPAT_MODE
-    for (i=0; i < MAX_SKB_STORED; i++) {
-        ca->skb_array[i].first_tx_mstamp = 0;
-        ca->skb_array[i].interval_us = 0;
-    }
-
-    for (i=0; i < MAX_SKB_STORED; i++) {
-        if (skb) {
-            scb = TCP_SKB_CB(skb);
-            ca->skb_array[i].first_tx_mstamp = skb->skb_mstamp;
-            ca->skb_array[i].interval_us = tcp_stamp_us_delta(skb->skb_mstamp, scb->tx.first_tx_mstamp);
-            skb = skb->next;
-        }
-    }
-#endif
-    
     mmt = &ca->conn->prims;
     acked_bytes = tp->snd_una - ca->last_snd_una;
     ca->last_snd_una = tp->snd_una;
@@ -156,9 +127,6 @@ int load_primitives(struct sock *sk, const struct rate_sample *rs) {
     struct tcp_sock *tp = tcp_sk(sk);
     struct ccp *ca = inet_csk_ca(sk);
     struct ccp_primitives *mmt = &ca->conn->prims;
-#ifdef COMPAT_MODE
-    int i=0;
-#endif
 
     u64 rin = 0; // send bandwidth in bytes per second
     u64 rout = 0; // recv bandwidth in bytes per second
@@ -169,22 +137,8 @@ int load_primitives(struct sock *sk, const struct rate_sample *rs) {
         return -1;
     }
 
-#ifdef COMPAT_MODE
-    // receive rate
-    ack_us = tcp_stamp_us_delta(tp->tcp_mstamp, rs->prior_mstamp);
-
-    // send rate
-    for (i=0; i < MAX_SKB_STORED; i++) {
-        if (ca->skb_array[i].first_tx_mstamp == tp->first_tx_mstamp) {
-            snd_us = ca->skb_array[i].interval_us;
-            break;
-        }
-    }
-#endif
-#ifdef RATESAMPLE_MODE
     ack_us = rs->rcv_interval_us;
     snd_us = rs->snd_interval_us;
-#endif
 
     if (ack_us != 0 && snd_us != 0) {
         rin = rout = (u64)rs->delivered * MTU * S_TO_US;
@@ -406,13 +360,6 @@ static int __init tcp_ccp_register(void) {
     int ok;
 
     ktime_get_real_ts64(&tzero);
-
-#ifdef COMPAT_MODE
-    pr_info("[ccp] Compatibility mode: 4.13 <= kernel version <= 4.16\n");
-#endif
-#ifdef RATESAMPLE_MODE
-    pr_info("[ccp] Rate-sample mode: 4.19 <= kernel version\n");
-#endif
 
     kernel_datapath = kmalloc(sizeof(struct ccp_datapath), GFP_KERNEL);
     if(!kernel_datapath) {
