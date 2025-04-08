@@ -23,8 +23,8 @@ endif
 EXTRA_CFLAGS += $(DEBFLAGS)
 EXTRA_CFLAGS += -std=gnu99 -Wno-declaration-after-statement -fgnu89-inline -D__KERNEL__
 
-TARGET = ccp
-ccp-objs := libccp/serialize.o libccp/ccp_priv.o libccp/machine.o libccp/ccp.o ccpkp/ccpkp.o ccpkp/lfq/lfq.o tcp_ccp.o ccp_nl.o
+TARGET = ccp-cong
+ccp-cong-objs := libccp/serialize.o libccp/ccp_priv.o libccp/machine.o libccp/ccp.o ccpkp/ccpkp.o ccpkp/lfq/lfq.o tcp_ccp.o ccp_nl.o
 
 obj-m := $(TARGET).o
 

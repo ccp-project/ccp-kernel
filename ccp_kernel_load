@@ -1,6 +1,6 @@
 #!/bin/bash
 
-module="ccp"
+module="ccp-cong"
 device="ccpkp"
 mode="664"
 
@@ -21,7 +21,7 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
-if [ -z "lsmod | grep 'ccp'" ]; then
+if [ -z "lsmod | grep $module" ]; then
     echo "CCP kernel module already loaded"
     exit 1
 fi
