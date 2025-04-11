@@ -187,7 +187,7 @@ int load_primitives(struct sock *sk, const struct rate_sample *rs) {
     return 0;
 }
 
-void tcp_ccp_cong_control(struct sock *sk, u32 ack, int flag, const struct rate_sample *rs) {
+void tcp_ccp_cong_control(struct sock *sk, const struct rate_sample *rs) {
     // aggregate measurement
     // state = fold(state, rs)
     int ok;
