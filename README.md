@@ -10,6 +10,7 @@ As of portus 0.6.1, a compatibility mode is added automatically, but using the n
 
 ## Linux kernel version support
 
-- We support Linux kernel version 6.10+, as of [this commit](https://github.com/ccp-project/ccp-kernel/commit/981384a51ae731b9381bc42a88567c1f61f8824b).
-- If you need to run on Linux kernel versions between 4.19 and 6.9, revert the above commit and it should work.
+- We support Linux kernel version 6.15+, as of [this commit](https://github.com/ccp-project/ccp-kernel/commit/483d40f3cddb7282dff9cd74faf88875e4b35831).
+- If you need to run on Linux kernel versions between 6.10 and 6.14, the [`6.10-6.14-compat` branch](https://github.com/ccp-project/ccp-kernel/tree/6.10-6.14-compat) might work.
+- If you need to run on Linux kernel versions between 4.19 and 6.9, the [`4.19-6.9-compat` branch](https://github.com/ccp-project/ccp-kernel/tree/4.19-6.9-compat) might work.
 - Kernels older than 4.19 (i.e., before [our patch](https://patchwork.ozlabs.org/patch/941532/)) are not supported.
