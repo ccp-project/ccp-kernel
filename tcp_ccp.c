@@ -304,7 +304,7 @@ void tcp_ccp_init(struct sock *sk) {
     }
 
     // if no ecn support
-    if (tcp_ecn_disabled(tp)) {
+    if (!(tp->ecn_flags & TCP_ECN_OK)) {
         INET_ECN_dontxmit(sk);
     }
     
